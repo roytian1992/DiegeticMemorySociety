@@ -1,0 +1,81 @@
+id: episodic_memories
+category: dms
+name: Episodic Memories
+description: >
+  Extract ordered, entity-linked episodic memories from one narrative unit.
+
+task_variables:
+  - name: unit_json
+    type: string
+    required: true
+    description: JSON object for one ordered narrative unit.
+  - name: extracted_candidates
+    type: string
+    required: true
+    description: JSON/text from prior extraction results for the current narrative unit.
+
+static_variables:
+  - name: extraction_policy
+    type: string
+    required: true
+    description: Project-level extraction rules.
+
+template: |
+  # Task
+  Fill the episodic memory JSON for the current narrative unit.
+
+  # Source
+  Base memories on the current narrative-unit text, stated facts, setting, and KG entity candidates.
+
+  # What To Capture
+  - episodic_memories: a small set of ordered memory records that matter for later continuity.
+  - entity_links: entities from the extracted KG candidates that are directly connected to each memory.
+
+  # Global Constraints
+  {extraction_policy}
+
+  # Output Format
+  Return exactly one JSON object using this schema. Include no Markdown or commentary.
+
+  {
+    "unit_id": "string",
+    "episodic_memories": [
+      {
+        "memory_id_hint": "string",
+        "sequence_index": 1,
+        "timeline_label": "string",
+            "memory_type": "observation | action | dialogue | decision | state_change | knowledge_transfer | relationship_change | setting | other",
+        "summary": "string",
+        "evidence": "string",
+        "entity_links": [
+          {
+            "entity": "string",
+            "entity_type": "character | group | organization | location | object | concept | occasion",
+            "link_role": "experiencer | actor | speaker | observer | target | object | location | concept | source | receiver | other",
+            "evidence": "string"
+          }
+        ]
+      }
+    ]
+  }
+
+  # Field Rules
+  - unit_id must match the input narrative unit.
+  - sequence_index starts at 1 and follows the order of the current unit.
+  - timeline_label should use an explicit time if available; otherwise use the narrative unit order.
+  - Extract only memories that can affect later writing continuity, entity state, entity knowledge, or durable relationships.
+  - Prefer 3 to 8 episodic_memories for an ordinary unit. Use fewer when the unit is mostly visual/atmospheric description.
+  - Do not create separate episodic_memories for open questions; open questions are already handled by scene context.
+  - Do not duplicate the same fact as both an observation and a state_change unless the before/after change is explicit.
+  - summary should be a compact memory statement, not a full retelling.
+  - evidence must be an exact contiguous substring copied from the current narrative unit's title, subtitle, or content.
+  - Do not use paraphrased evidence, translated evidence, shortened evidence with ellipses, or text copied only from Extracted Candidates.
+  - entity_links should name entities already present in Extracted Candidates.
+  - Do not create entity links for ordinary body parts, broad generic concepts, or deictic phrases unless they are explicit extracted KG candidates.
+  - Use empty arrays when a list has no supported items.
+
+  # Current Narrative Unit
+  {unit_json}
+
+  # Extracted Scene Context And KG Candidates
+  {extracted_candidates}

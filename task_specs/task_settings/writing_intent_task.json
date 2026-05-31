@@ -1,0 +1,15 @@
+{
+  "task": "writing_intent",
+  "prompt_id": "dms/writing_intent",
+  "task_name": "高层写作意图抽取",
+  "intent_policy": [
+    "This task is for benchmark input construction, not for retrieval.",
+    "Output only the author-facing writing intent.",
+    "Keep the output schema minimal; do not add seed entities, retrieval needs, query plans, or answer hints as separate fields.",
+    "Keep natural author-facing anchors such as central character names, main location, key vehicle or facility, mission target, or immediate setup when they are important to the writing intent.",
+    "Do not over-abstract named characters or core props into anonymous roles when the scene clearly depends on them.",
+    "Avoid full synopsis, beat lists, exact dialogue, evidence spans, and overly specific choreography.",
+    "Avoid retrieval instructions such as what to retrieve, query, recall, look up, or rank.",
+    "The output must be parseable JSON."
+  ]
+}

@@ -1,0 +1,92 @@
+id: scene_event_candidates
+category: dms
+name: Scene Event Candidates
+description: >
+  Extract event candidates and state-change candidates from one ordered narrative unit.
+
+task_variables:
+  - name: unit_json
+    type: string
+    required: true
+    description: JSON object for one ordered narrative unit.
+  - name: prior_context
+    type: string
+    required: false
+    description: Optional prior world-model context from earlier scenes.
+
+static_variables:
+  - name: extraction_policy
+    type: string
+    required: true
+    description: Project-level extraction rules.
+
+template: |
+  # Task
+  Fill the event candidate JSON for the current narrative unit.
+
+  # Source
+  Base candidates on the current narrative-unit text. Use prior context only for naming continuity and already-known entity references.
+
+  # What To Capture
+  - events: story-world events that happen, are observed, are announced, or are explicitly decided in the current narrative unit.
+  - knowledge_transfers: information passed from one party to another, or a party explicitly learning, believing, suspecting, or misbelieving something.
+  - state_changes: state changes of characters, groups, locations, objects, technologies/facilities, organizations, or concepts.
+  - thread_candidates: secrets, foreshadowing, unresolved conflicts, promises, or world rules that may need later tracking.
+
+  # Global Constraints
+  {extraction_policy}
+
+  # Prior Context
+  {prior_context}
+
+  # Output Format
+  Return exactly one JSON object using this schema. Include no Markdown or commentary.
+
+  {
+    "unit_id": "string",
+    "events": [
+      {
+        "event_id_hint": "string",
+        "summary": "string",
+        "participants": ["string"],
+        "location": "string",
+        "event_type": "action | dialogue | observation | decision | state_change | reveal | setup",
+        "evidence": "string"
+      }
+    ],
+    "knowledge_transfers": [
+      {
+        "source": "string",
+        "receiver": "string",
+        "content": "string",
+        "epistemic_status": "knows | believes | suspects | misbelieves | hears",
+        "evidence": "string"
+      }
+    ],
+    "state_changes": [
+      {
+        "entity": "string",
+        "before": "string",
+        "after": "string",
+        "evidence": "string"
+      }
+    ],
+    "thread_candidates": [
+      {
+        "thread_type": "secret | foreshadowing | unresolved_conflict | promise | world_rule",
+        "summary": "string",
+        "evidence": "string"
+      }
+    ]
+  }
+
+  # Field Rules
+  - unit_id must match the input narrative unit.
+  - participants should include only entities that directly participate in, observe, speak in, or are affected by the event.
+  - event_type must be one of the enum labels shown in the schema.
+  - epistemic_status must be one of the enum labels shown in the schema.
+  - evidence must be a short verbatim span from the input narrative unit.
+  - Use empty arrays when a list has no supported items.
+
+  # Current Narrative Unit
+  {unit_json}

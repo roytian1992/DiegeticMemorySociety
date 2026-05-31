@@ -1,0 +1,73 @@
+id: eval_intent_consistency
+category: dms
+name: Evaluation Intent Consistency
+description: >
+  Judge whether a candidate passage satisfies decomposed writing-intent requirements.
+
+task_variables:
+  - name: writing_intent
+    type: string
+    required: true
+    description: Original writing intent.
+  - name: requirements_json
+    type: string
+    required: true
+    description: JSON list/object containing atomic requirements.
+  - name: candidate_label
+    type: string
+    required: true
+    description: Label for the passage being judged.
+  - name: candidate_text
+    type: string
+    required: true
+    description: Candidate narrative passage.
+
+static_variables: []
+
+template: |
+  # Task
+  Judge writing-intent consistency for the candidate passage.
+
+  # Method
+  Use the decomposed requirements as a FactScore-like checklist. For each
+  requirement, decide whether the candidate passage satisfies it.
+
+  # Status Labels
+  - satisfied: the requirement is clearly fulfilled.
+  - partially_satisfied: the passage addresses the requirement but misses an important part or weakens it.
+  - not_satisfied: the passage does not fulfill the requirement.
+
+  # Rules
+  - Judge intent satisfaction, not whether the passage copies any reference text.
+  - Do not reward unsupported details unless they help satisfy the stated intent.
+  - Do not penalize harmless local details that do not conflict with the intent.
+  - Require concrete named anchors from the intent when the requirement includes them.
+  - When the intent asks for a voice, tone, or analogy, judge only whether the passage produces that effect. Do not state in your rationale that the requested tone is an established identity, profession, rank, or backstory.
+  - Do not convert a phrase such as "old-soldier voice" into "the character is a veteran" or "the character is a soldier"; describe it as "old-soldier-like tone" unless the candidate itself explicitly states otherwise.
+  - Output only JSON.
+
+  # Output Schema
+  {
+    "candidate_label": "string",
+    "requirement_judgments": [
+      {
+        "requirement_id": "REQ1",
+        "status": "satisfied | partially_satisfied | not_satisfied",
+        "evidence_from_candidate": "short quote or empty string",
+        "rationale": "string"
+      }
+    ],
+    "summary": "string"
+  }
+
+  # Writing Intent
+  {writing_intent}
+
+  # Requirements
+  {requirements_json}
+
+  # Candidate Label
+  {candidate_label}
+
+  # Candidate Passage
+  {candidate_text}

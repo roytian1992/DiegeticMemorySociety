@@ -1,0 +1,14 @@
+{
+  "task": "writing_intent_sparse",
+  "prompt_id": "dms/writing_intent_sparse",
+  "task_name": "稀疏写作意图抽取",
+  "intent_policy": [
+    "This task is for exploratory social simulation before the author has a detailed writing plan.",
+    "Output only the author-facing sparse writing intent.",
+    "Keep the output schema minimal; do not add seed entities, retrieval needs, query plans, simulation plans, scene beats, or answer hints as separate fields.",
+    "Keep only anchors needed to define the exploration space, such as central characters, broad location, occasion, important object, or immediate situation.",
+    "Prefer an open-ended setup over a target outcome.",
+    "Avoid full synopsis, exact dialogue, exact action choreography, required endings, detailed emotional turns, evidence spans, and retrieval instructions.",
+    "The output must be parseable JSON."
+  ]
+}

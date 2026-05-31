@@ -1,0 +1,68 @@
+id: scene_inventory
+category: dms
+name: Scene Inventory
+description: >
+  Extract a compact, evidence-bound narrative-unit frame, facts, and open questions.
+
+task_variables:
+  - name: unit_json
+    type: string
+    required: true
+    description: JSON object for one ordered narrative unit.
+
+static_variables:
+  - name: extraction_policy
+    type: string
+    required: true
+    description: Project-level extraction rules.
+
+template: |
+  # Task
+  Fill the inventory JSON for the current narrative unit.
+
+  # Source
+  Base the output on the current narrative-unit text only. Treat the title, subtitle, and body as source text.
+
+  # What To Capture
+  - setting: the location, time hint, and spatial context stated by the title or body.
+  - stated_facts: compact propositions that the current unit directly establishes.
+  - open_questions: unresolved questions, risks, or information gaps raised by the current unit.
+
+  # Global Constraints
+  {extraction_policy}
+
+  # Output Format
+  Return exactly one JSON object using this schema. Include no Markdown or commentary.
+
+  {
+    "unit_id": "string",
+    "setting": {
+      "location": "string",
+      "time_hint": "string",
+      "spatial_context": "string"
+    },
+    "stated_facts": [
+      {
+        "proposition": "string",
+        "speaker_or_source": "string",
+        "evidence": "string"
+      }
+    ],
+    "open_questions": [
+      {
+        "question": "string",
+        "evidence": "string"
+      }
+    ]
+  }
+
+  # Field Rules
+  - unit_id must match the input narrative unit.
+  - Use an empty string for any setting field that the text does not support.
+  - stated_facts must be short propositions with direct evidence.
+  - open_questions must come from uncertainty introduced by the current narrative unit itself.
+  - evidence must be a short verbatim span from the input narrative unit.
+  - Use empty arrays when a list has no supported items.
+
+  # Current Narrative Unit
+  {unit_json}

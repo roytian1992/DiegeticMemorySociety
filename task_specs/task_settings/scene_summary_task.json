@@ -1,0 +1,13 @@
+{
+  "task": "scene_summary",
+  "prompt_id": "dms/scene_summary",
+  "task_name": "章节摘要生成",
+  "summary_policy": [
+    "Base the summary only on the current narrative unit.",
+    "Write all natural-language output values in the same language as the current narrative unit, except for exact names, codes, and schema labels.",
+    "Keep concrete author-facing anchors such as character names, places, organizations, technologies or facilities, important objects, occasions, concepts, stated deadlines, and explicit emotional or strategic pressure.",
+    "This task produces a recap and retrieval document, not entity extraction, memory extraction, relationship extraction, or a query plan.",
+    "Do not resolve uncertainty using later context.",
+    "The output must be parseable JSON."
+  ]
+}

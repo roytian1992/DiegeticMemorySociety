@@ -1,0 +1,69 @@
+id: writing_generation
+category: dms
+name: Writing Generation
+description: >
+  Generate one narrative continuation from a writing intent and a memory packet.
+
+task_variables:
+  - name: writing_request
+    type: string
+    required: true
+    description: User-facing request for what to write, phrased as an instruction such as "写一段...".
+  - name: memory_packet
+    type: string
+    required: true
+    description: Retrieved memory packet for the prefix boundary.
+  - name: style_reference
+    type: string
+    required: false
+    description: Optional nearby source passage used only as a style and format reference.
+  - name: length_requirement
+    type: string
+    required: true
+    description: Required output length contract, preferably with lower and upper bounds.
+  - name: output_requirements
+    type: string
+    required: true
+    description: General output requirements such as language, format, anchors, and constraints.
+
+static_variables: []
+
+template: |
+  # Task
+  Write the next narrative passage according to the writing request.
+
+  # Inputs
+  You are given:
+  1. A writing request that describes what should be written next.
+  2. A memory packet containing prior context, entity states, relations, episodic memories, scene summaries, and references.
+  3. An optional style reference passage from nearby writing.
+  4. A length requirement.
+  5. Output requirements for format, anchors, and constraints.
+
+  # Writing Request
+  {writing_request}
+
+  {memory_packet}
+
+  # Style Reference
+  {style_reference}
+
+  # Length Requirement
+  {length_requirement}
+
+  # Output Requirements
+  {output_requirements}
+
+  # General Rules
+  - Use the memory packet only as prior context for continuity.
+  - Follow the writing request as the main creative target.
+  - Use the style reference only for prose format, pacing, sentence length, action/dialogue balance, and surface rhythm.
+  - Do not treat the style reference as new story facts unless the same fact is also supported by the memory packet or writing request.
+  - Keep names, entity continuity, relationships, and known states consistent with the memory packet.
+  - Satisfy the length requirement. If the draft is too short, expand only with in-scene action, environment pressure, or dialogue that follows the writing request.
+  - Prefer concrete scene writing over explanation.
+  - Do not include analysis, bullet points, notes, citations, memory indexes, or reference ids in the output.
+  - Do not introduce major new named entities, technologies, organizations, locations, or lore unless the writing request explicitly asks for them.
+  - Do not copy evidence text or scene-summary text verbatim from the memory packet unless the writing request explicitly asks for quoted reuse.
+
+  # Draft

@@ -1,241 +1,253 @@
 # Diegetic Memory Society
 
-## Core Idea
-
-**Diegetic Memory Society** is a concept for long-form creative writing: a narrative memory system where memory is not a passive database serving an agent, but is itself organized as a multi-agent system.
-
-Most agent-memory work asks:
-
-> How can memory serve an agent or a multi-agent system?
-
-This project asks a different question:
-
-> What if memory itself is a society of agents?
-
-In this view, a story's memory is not stored only as flat notes, vectors, or summaries. It is enacted by multiple timeline-bounded narrative agents, each carrying a partial, situated, and role-specific view of the story world.
-
-## One-Sentence Description
-
-Diegetic Memory Society turns a long-form story into a timeline-constrained multi-agent memory system, where character agents can only access what they should know at a given story moment, enabling creative simulation and consistency auditing with explicit prefix and perspective boundaries.
-
-## Why This Is Different
-
-Existing memory-augmented agent systems usually treat memory as an external module:
-
-- an agent writes to memory;
-- an agent retrieves from memory;
-- a multi-agent system shares or coordinates through memory.
-
-Here, memory is not merely a support module. The memory layer itself becomes a society:
-
-| Common framing | Diegetic Memory Society framing |
-| --- | --- |
-| Memory for agents | Memory as agents |
-| Passive storage | Active perspective-bearing memory |
-| Global retrieval | Role- and time-constrained retrieval |
-| Omniscient story context | Diegetic, in-world knowledge |
-| Single memory bank | Multi-agent memory society |
-
-The central claim is:
-
-> A narrative memory system should not only remember what happened. It should remember who knew what, when they knew it, how they interpreted it, and what they could plausibly do next.
-
-## Motivation
-
-Long-form writing has a persistent memory problem. As the story grows, the author has to track:
-
-- events and chronology;
-- character knowledge;
-- private secrets;
-- misunderstandings;
-- promises and foreshadowing;
-- world rules;
-- changing motivations;
-- unresolved conflicts;
-- contradictions introduced by later chapters.
-
-A normal writing assistant can read a large manuscript context, but this is also its weakness. If it has an omniscient view, it may generate suggestions that use hidden secrets or facts that a character should not know yet.
-
-For story reasoning, the important unit is not only relevance. It is **visibility**.
-
-At a given story moment, a character should only reason from:
-
-1. events that already happened in the story timeline;
-2. information that the character experienced, heard, inferred, or plausibly believes;
-3. the character's goals, emotions, biases, and misunderstandings at that moment.
-
-## System Concept
-
-The system runs in the background while an author writes. It continuously parses completed text and turns it into a structured narrative memory society.
-
-### 1. Story Parser
-
-Extracts narrative units from the manuscript:
-
-- events;
-- characters;
-- locations;
-- objects;
-- relationships;
-- secrets;
-- promises;
-- foreshadowing;
-- world rules;
-- conflicts;
-- emotional shifts;
-- causal links.
-
-### 2. Story-World Timeline
-
-Organizes extracted events by the internal chronology of the story, not merely by chapter order or writing order.
-
-This matters because stories often contain:
-
-- flashbacks;
-- parallel timelines;
-- unreliable narration;
-- delayed revelations;
-- non-linear chapter order.
-
-### 3. Memory Agents
-
-Instead of one global memory store, the system creates multiple memory agents. Possible agents include:
-
-| Agent type | What it represents |
-| --- | --- |
-| Character memory agent | What a specific character knows, believes, wants, and misunderstands |
-| Secret memory agent | Hidden facts and their reveal conditions |
-| Foreshadowing memory agent | Hints, promises, and later payoffs |
-| Timeline memory agent | Event order, causality, and temporal constraints |
-| World-rule memory agent | Stable rules of the fictional world |
-| Consistency auditor agent | Cross-checks contradictions, viewpoint errors, and unresolved threads |
-
-These agents do not all see the same information. Their access is governed by story time, role, evidence, and narrative permissions.
-
-### 4. Visibility Control
-
-The key mechanism is a visibility gate.
-
-When the author selects a plot point and a character perspective, the system asks:
-
-- Has this event happened before the selected story time?
-- Does this character know this fact?
-- Is this information secret, inferred, rumored, mistaken, or confirmed?
-- Was the knowledge acquired through direct experience, dialogue, observation, or deduction?
-- Is this information allowed under the selected prefix, branch, and character perspective?
-
-Only visible memory is passed to the character agent.
-
-### 5. Simulation and Auditing
-
-Once memory is constrained by timeline and perspective, the system can support two main workflows.
-
-#### Creative Simulation
-
-The author can ask:
-
-- What would this character do next from this point?
-- How would this character interpret the event without knowing the later truth?
-- What possible plot branches follow from this character's current goals and false beliefs?
-- What dialogue would be plausible given what both characters know at this moment?
-
-This is not generic continuation. It is perspective-constrained story simulation.
-
-#### Consistency Auditing
-
-The author can also ask:
-
-- Did a character know something too early?
-- Did a later chapter contradict an earlier timeline?
-- Was a foreshadowed object, promise, or threat ever resolved?
-- Did a character's motivation change without enough intermediate evidence?
-- Did a character use knowledge that the prefix does not support for that perspective?
-
-This makes the system a plot-hole detector with explicit temporal and perspectival constraints.
-
-## Example Workflow
-
-1. The author writes chapters 1 to 17.
-2. The system extracts story events, character states, secrets, and foreshadowing.
-3. The author selects "Chapter 12 ending" and "Character A".
-4. The system constructs Character A's visible memory at that point.
-5. Character A agent simulates likely next actions based on goals, fears, past experiences, and incomplete knowledge.
-6. The author writes later chapters.
-7. The auditor agents compare later developments against the earlier timeline and character knowledge.
-8. The system flags possible issues: character-knowledge mismatch, unclosed foreshadowing, motivation inconsistency, timeline contradiction.
-
-## Relationship to Agent Memory Research
-
-This idea is inspired by the agent memory taxonomy:
-
-- **Forms**: token-level structured memory, timelines, event graphs, character graphs, secret indexes, foreshadowing traces.
-- **Functions**: factual memory for story facts, experiential memory for character behavior patterns, working memory for current plot-point simulation.
-- **Dynamics**: memory formation from manuscript parsing, memory evolution through updates and contradictions, memory retrieval through time- and perspective-constrained access.
-
-The distinctive part is that memory is not a single substrate used by agents. Memory is decomposed into agents that negotiate, constrain, and audit the story world.
-
-## Naming Candidates
-
-Current preferred name:
-
-> **Diegetic Memory Society**
-
-Why it works:
-
-- **Diegetic** means inside the story world, rather than from the author's omniscient outside view.
-- **Memory** emphasizes that the system is about persistent narrative knowledge.
-- **Society** captures that memory is organized as many interacting agents, not a single store.
-
-Other possible names:
-
-- Memory-as-Agent-Society
-- Narrative Memory Society
-- Society of Memories
-- Chronology-Aware Memory Society
-- Memory as a Cast
-- Story Memory Society
-- DiegeticMind
-- MemoCast
-
-Possible paper-style title:
-
-> **Diegetic Memory Society: Memory-as-Agent-Society for Timeline-Constrained Story Reasoning**
-
-Alternative title:
-
-> **From Memory for Agents to Memory as Agents: A Diegetic Memory Society for Long-Form Story Writing**
-
-## Design Principle
-
-The system should not take authorship away from the writer.
-
-It should provide:
-
-- plausible branches, not one definitive continuation;
-- reasons for each simulation, not opaque suggestions;
-- risk flags, not automatic rewrites;
-- character-bounded perspectives, not omniscient narration;
-- traceable evidence, not unsupported claims.
-
-The author remains the creative authority. The system acts as a narrative memory society that can simulate, challenge, and audit the story world.
-
-## Open Questions
-
-| Question | Possible direction |
-| --- | --- |
-| How to extract a reliable story-world timeline from free-form prose? | event extraction, temporal ordering, chapter-level incremental parsing |
-| How to determine what each character knows? | viewpoint modeling, evidence tracking, information propagation |
-| How to represent secrets and false beliefs? | private memory, belief states, reveal conditions, confidence labels |
-| How to enforce prefix and perspective boundaries? | temporal access control, character-level retrieval filters |
-| How should memory agents communicate? | debate, blackboard coordination, role-specific memory exchange |
-| How to evaluate story simulation quality? | author preference, plot consistency, character motivation consistency |
-| How to avoid over-directing the author? | branch generation, explanation-first suggestions, non-destructive edits |
-
-## Current Project Direction
-
-The immediate goal is to keep this as a concept note and early prototype direction.
-
-The most important next step is to make the core distinction crisp:
-
-> Memory is not a passive module attached to agents.  
-> Memory is a society of agents whose partial perspectives collectively maintain and reason over a story world.
+Diegetic Memory Society is a prototype memory system for long-form writing. It turns completed scenes into timeline-bounded assets: a small knowledge graph, evidence-grounded episodic memories, scene summaries, entity attribute cards, social simulation outputs, and writing/evaluation artifacts.
+
+![DMS overview](assets/DMS_overview.png)
+
+## Current Status
+
+The repository now contains a working Python prototype rather than only the original concept note.
+
+- Scene processing is ordered by story/script scene, while independent extraction tasks inside one scene can run concurrently.
+- Long scenes are split with a configurable maximum chunk size, currently defaulting to `800` English words or Chinese characters.
+- Extracted entity types are intentionally limited to seven graph-facing categories: `character`, `group`, `organization`, `location`, `object`, `concept`, and `occasion`.
+- Episodic memories keep source evidence for traceability, and evidence is aligned back to the original scene text.
+- Durable relations are reserved for longer-lived state-like relationships rather than momentary actions.
+- SQLite stores entities, aliases, relations, memories, scene summaries, metadata, and retrieval documents.
+- Chroma provides vector retrieval over memory and summary documents.
+- The retrieval pipeline builds a prefix-only memory packet for a target scene, so generation cannot read target or future scene memories.
+- Sparse and detailed writing-intent extraction are both implemented: sparse intent can drive exploratory generation, detailed intent is used for evaluation.
+- Social simulation is positioned as a low-spec ideation layer: it uses sparse intent plus retrieved memory and character cards to suggest plausible character behavior.
+- Writing generation uses a separate `writing_llm` config section and does not apply automatic post-generation repair.
+- Evaluation is LLM-as-judge over three dimensions: writing intent consistency, writing quality, and memory faithfulness.
+- A Gradio UI is available for inspecting benchmark runs, scene artifacts, memory packets, social simulation, drafts, and scores.
+
+## Repository Layout
+
+```text
+src/dms/
+  benchmark.py              # full writing benchmark orchestration
+  cli.py                    # command line entry points
+  config.py                 # local YAML model config loader
+  evaluation/               # scene eligibility and writing evaluation
+  llm/                      # fake and OpenAI-compatible model clients
+  memory/                   # staged memory, KG, relations, world model
+  parsing/                  # JSON extraction with json_repair fallback
+  prompts/                  # YAML prompt loading
+  retrieval/                # memory packet construction
+  runners/                  # extraction runners and ordered pipeline
+  scripts/                  # source script adapters
+  simulation/               # attribute cards and social simulation
+  storage/                  # SQLite import and Chroma indexing
+  ui/                       # Gradio app
+task_specs/
+  prompts/dms/              # prompt-managed extraction, simulation, writing, eval tasks
+  task_settings/            # task-level schemas and policies
+data/evaluation_splits/     # committed deterministic eligibility splits
+scripts/
+  run_full_benchmark.sh     # long-running full-script tmux entry point
+```
+
+Local-only files are intentionally ignored by git:
+
+- `configs/local_config.yaml`
+- `configs/local_model_config.yaml`
+- `data/raw/`
+- `runs/`
+- `outputs/`
+- `logs/`
+
+## Setup
+
+The current development environment is the local conda environment named `screenplay`.
+
+```bash
+conda activate screenplay
+cd DiegeticMemorySociety
+export PYTHONPATH=src
+```
+
+Install editable package metadata if needed:
+
+```bash
+pip install -e .
+```
+
+For Chroma indexing and the UI, the environment also needs `chromadb` and `gradio`.
+
+## Local Config
+
+Use a local YAML config at `configs/local_config.yaml`. This file is ignored and should not be committed.
+
+```yaml
+llm:
+  provider: openai
+  model_name: Qwen3-235B-FP8
+  api_key: <local-token>
+  base_url: http://127.0.0.1:8002
+  max_tokens: 4096
+  timeout: 240
+  temperature: 0
+
+embedding:
+  provider: openai
+  model_name: bge-m3
+  api_key: not-needed
+  base_url: http://localhost:8080/v1
+  max_tokens: 8192
+  dimensions: 1024
+  timeout: 60
+
+writing_llm:
+  provider: openai
+  model_name: gpt-5.5
+  api_key: <local-secret>
+  base_url: <writing-llm-openai-compatible-base-url>
+  max_tokens: 4096
+  timeout: 240
+  temperature: 0.7
+  reasoning_effort: high
+```
+
+## Common Commands
+
+Inspect the raw script:
+
+```bash
+python -m dms.cli inspect-script data/raw/流浪地球2剧本.json --limit 3
+```
+
+Build deterministic scene eligibility splits:
+
+```bash
+python -m dms.cli build-scene-eligibility \
+  data/raw/流浪地球2剧本.json \
+  --output-dir data/evaluation_splits/we2_scene_eligibility_20260530
+```
+
+Run ordered extraction for a small pilot batch:
+
+```bash
+python -m dms.cli run-scene-ordered-pipeline \
+  data/raw/流浪地球2剧本.json \
+  --output-root runs/scene_ordered/we2_scene12345_qwen235_8002_7types \
+  --start 1 \
+  --limit 5 \
+  --model-config configs/local_config.yaml \
+  --model-section llm \
+  --scene-task-concurrency 3 \
+  --max-chunk-units 800 \
+  --overwrite
+```
+
+Import an ordered run into SQLite:
+
+```bash
+python -m dms.cli build-asset-store \
+  --run-root runs/scene_ordered/we2_scene12345_qwen235_8002_7types \
+  --output-db runs/assets/we2_scene12345_7types.sqlite \
+  --overwrite
+```
+
+Build a Chroma index with the configured embedding service:
+
+```bash
+python -m dms.cli build-chroma-index \
+  runs/assets/we2_scene12345_7types.sqlite \
+  --persist-dir runs/assets/we2_scene12345_7types_chroma_bge_m3 \
+  --collection-name dms_retrieval_documents_bge_m3 \
+  --model-config configs/local_config.yaml \
+  --embedding-section embedding \
+  --overwrite
+```
+
+Run the current scene-6 smoke benchmark against scene-1-to-5 assets:
+
+```bash
+python -m dms.cli run-writing-benchmark \
+  data/raw/流浪地球2剧本.json \
+  --db-path runs/assets/we2_scene12345_7types.sqlite \
+  --chroma-dir runs/assets/we2_scene12345_7types_chroma_bge_m3 \
+  --collection-name dms_retrieval_documents_bge_m3 \
+  --output-dir runs/benchmark/we2_scene6_new_pipeline \
+  --target-scene-id scene_0006 \
+  --limit 1 \
+  --overwrite
+```
+
+Launch the UI:
+
+```bash
+python -m dms.cli launch-ui \
+  --benchmark-dir runs/benchmark/we2_scene6_new_pipeline \
+  --db-path runs/assets/we2_scene12345_7types.sqlite \
+  --chroma-dir runs/assets/we2_scene12345_7types_chroma_bge_m3 \
+  --collection-name dms_retrieval_documents_bge_m3 \
+  --server-port 7860
+```
+
+## Full Script Run
+
+The full-script workflow can take a long time. Use the provided script inside `tmux`:
+
+```bash
+tmux new-session -d -s dms_full \
+  'cd /path/to/DiegeticMemorySociety && bash scripts/run_full_benchmark.sh'
+```
+
+The script performs:
+
+1. full ordered extraction over all scenes;
+2. SQLite asset-store import;
+3. Chroma vector index build;
+4. full writing benchmark over all eligible writing targets.
+
+Outputs are written under `runs/`, and logs are written under `logs/`.
+
+Useful overrides:
+
+```bash
+RUN_ID=we2_full_qwen235_8002_20260531 \
+PYTHON_BIN=/path/to/conda/envs/screenplay/bin/python \
+SCENE_TASK_CONCURRENCY=3 \
+MAX_CHUNK_UNITS=800 \
+bash scripts/run_full_benchmark.sh
+```
+
+For a bounded dry pilot, set `SCENE_LIMIT` and `BENCHMARK_LIMIT`.
+
+## Evaluation
+
+The writing benchmark compares generated text and the original reference scene under the same judge prompt. The reported metrics are:
+
+- `writing_intent_consistency`
+- `writing_quality`
+- `memory_faithfulness`
+
+Reference scores are used as calibration, not as a demand that generation copy the original scene.
+
+## Verified Smoke Tests
+
+The standardized scene-6 workflow has been run with scene-1-to-5 assets. The run completed one target scene with:
+
+- 4 retrieved entities;
+- 17 retrieved episodic memories;
+- 1 durable relation;
+- 5 related scene summaries;
+- 2 attribute cards;
+- 2 character simulations.
+
+Recent targeted regression command:
+
+```bash
+PYTHONPATH=src python -m pytest \
+  tests/test_writing_benchmark.py \
+  tests/test_gradio_app.py \
+  tests/test_writing_e2e_workflow.py \
+  tests/test_writing_evaluation.py \
+  tests/test_config.py \
+  tests/test_prompt_loader.py \
+  -q
+```
+
+Result: `22 passed`.

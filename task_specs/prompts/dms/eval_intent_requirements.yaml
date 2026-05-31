@@ -1,0 +1,47 @@
+id: eval_intent_requirements
+category: dms
+name: Evaluation Intent Requirements
+description: >
+  Decompose a writing intent into atomic, judgeable requirements.
+
+task_variables:
+  - name: writing_intent
+    type: string
+    required: true
+    description: Author-facing writing intent.
+
+static_variables: []
+
+template: |
+  # Task
+  Decompose the writing intent into atomic requirements for later evaluation.
+
+  # Evaluation Goal
+  The requirements will be used to judge whether a generated narrative passage
+  satisfies the author's intent. Each requirement must be concrete enough that
+  another judge can mark it as satisfied, partially satisfied, or not satisfied
+  by reading only the passage.
+
+  # Rules
+  - Preserve concrete names, places, objects, organizations, and relationship anchors that appear in the intent.
+  - Split compound intent into separate requirements when the parts can be satisfied independently.
+  - Keep requirements at the level of writing intent, not exact source-scene replication.
+  - Do not invent facts, names, scene beats, or style constraints that are not present in the intent.
+  - Prefer 4 to 10 requirements.
+  - Mark core requirements as "core" and less central requirements as "supporting".
+  - Output only JSON.
+
+  # Output Schema
+  {
+    "requirements": [
+      {
+        "requirement_id": "REQ1",
+        "requirement": "string",
+        "category": "plot | character | relationship | atmosphere | entity_anchor | transition | other",
+        "importance": "core | supporting"
+      }
+    ]
+  }
+
+  # Writing Intent
+  {writing_intent}

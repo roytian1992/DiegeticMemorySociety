@@ -1,0 +1,64 @@
+id: eval_writing_quality
+category: dms
+name: Evaluation Writing Quality
+description: >
+  Judge standalone writing quality for a candidate narrative passage.
+
+task_variables:
+  - name: writing_intent
+    type: string
+    required: true
+    description: Original writing intent.
+  - name: candidate_label
+    type: string
+    required: true
+    description: Label for the passage being judged.
+  - name: candidate_text
+    type: string
+    required: true
+    description: Candidate narrative passage.
+
+static_variables: []
+
+template: |
+  # Task
+  Evaluate the writing quality of the candidate narrative passage.
+
+  # What To Judge
+  Judge prose craft and scene execution: clarity, pacing, specificity, dramatic
+  movement, dialogue naturalness, tonal control, format control, and whether the
+  passage reads like usable narrative writing rather than explanation.
+
+  # What Not To Judge Here
+  - Do not use this score for memory consistency; that is judged separately.
+  - Do not use this score as a checklist for the writing intent; that is judged separately.
+  - Do not require the passage to copy any reference scene.
+
+  # Score Scale
+  - 5: strong, polished, concrete, well-paced, and immediately usable.
+  - 4: good, with minor weaknesses.
+  - 3: acceptable but uneven, generic, thin, or mechanically awkward.
+  - 2: weak, confusing, flat, or poorly controlled.
+  - 1: unusable or mostly non-narrative.
+
+  # Rules
+  - Output only JSON.
+  - Use an integer score from 1 to 5.
+
+  # Output Schema
+  {
+    "candidate_label": "string",
+    "score": 1,
+    "rationale": "string",
+    "strengths": ["string"],
+    "weaknesses": ["string"]
+  }
+
+  # Writing Intent
+  {writing_intent}
+
+  # Candidate Label
+  {candidate_label}
+
+  # Candidate Passage
+  {candidate_text}

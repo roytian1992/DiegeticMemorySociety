@@ -1,0 +1,70 @@
+id: durable_relationships
+category: dms
+name: Durable Relationships
+description: >
+  Extract durable relationship observations between already extracted entities.
+
+task_variables:
+  - name: unit_json
+    type: string
+    required: true
+    description: JSON object for one ordered narrative unit.
+  - name: extracted_candidates
+    type: string
+    required: true
+    description: Current-unit scene context, KG entity candidates, and episodic memories.
+
+static_variables:
+  - name: extraction_policy
+    type: string
+    required: true
+    description: Project-level extraction rules.
+
+template: |
+  # Task
+  Fill the durable relationship JSON for the current narrative unit.
+
+  # Source
+  Base relationship observations on the current narrative-unit text and the already extracted entity candidates.
+
+  # What To Capture
+  Capture only longer-lived story-state relationships between two extracted entities. A relationship should be something that can remain true after the current unit unless a later unit changes it.
+  Include relationships that are explicitly stated or strongly anchored by named roles in the text, such as teacher/student, mentor/trainee, explicitly legal guardianship/wardship, care commitments, long-term responsibility, family ties, organization membership, command/reporting, shared mission partnership, teammate/comrade bonds, trust, alliance, hostility, ownership, or custody.
+  If two characters are only co-present, walking together, talking, looking, or performing a single local action, leave it out. If the text gives them a durable role relation, include that relation and cite the shortest exact source span that supports it.
+
+  # Global Constraints
+  {extraction_policy}
+
+  # Output Format
+  Return exactly one JSON object using this schema. Include no Markdown or commentary.
+
+  {
+    "unit_id": "string",
+    "relationship_observations": [
+      {
+        "source_entity": "string",
+        "target_entity": "string",
+        "relation_type": "string",
+        "status_or_change": "string",
+        "evidence": "string"
+      }
+    ]
+  }
+
+  # Field Rules
+  - unit_id must match the input narrative unit.
+  - source_entity and target_entity must name entities from the extracted KG candidates for this unit.
+  - relation_type should be a stable snake_case label such as kinship, family, alliance, hostility, membership, ownership, duty, trust, romantic_bond, dependency, protection, care_commitment_to, care_responsibility_for, protective_responsibility_for, custody, guardian_of, ward_of, mentor_of, student_of, teammate, comrade, mission_partner, pilot_partner, affiliation, responsible_for, works_for, commands, or reports_to.
+  - Use care_commitment_to or care_responsibility_for for promises such as "I will take care of him." Do not use guardian_of, ward_of, custody, mentor_of, teacher_of, instructor_of, commands, or reports_to unless the text explicitly states that legal, family, training, command, or work role.
+  - For vocatives or roles, map "teacher/master/instructor" to mentor_of/student_of when the addressed entity can be resolved from the current entity candidates.
+  - For shared ongoing roles, use teammate/comrade/mission_partner only when the current text supports a durable shared role or mission, not merely a one-off interaction.
+  - status_or_change should state the durable relationship state or explicit relationship change.
+  - evidence must be an exact contiguous substring copied from the current narrative unit's title, subtitle, or content.
+  - Do not record one-off actions, demonstrations, addressing, looking at, analyzing, reviewing, speaking to, displayed-on relations, physical contact, or temporary tool use as relationships.
+  - Use an empty relationship_observations array when the unit only supports momentary interactions.
+
+  # Current Narrative Unit
+  {unit_json}
+
+  # Extracted Candidates
+  {extracted_candidates}

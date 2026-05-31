@@ -1,0 +1,105 @@
+id: kg_entity_refinement
+category: dms
+name: KG Entity Refinement
+description: >
+  Refine an initial entity mention extraction into persistent KG entities,
+  local scene tags, and unresolved mentions.
+
+task_variables:
+  - name: unit_context_json
+    type: string
+    required: true
+    description: Lightweight metadata for one ordered narrative unit; it does not include full source text.
+  - name: scene_inventory_json
+    type: string
+    required: true
+    description: Parsed scene context for the same narrative unit.
+  - name: initial_entity_json
+    type: string
+    required: true
+    description: Initial entity mention JSON for the same narrative unit.
+
+static_variables:
+  - name: refinement_policy
+    type: string
+    required: true
+    description: Project-level entity refinement rules.
+  - name: entity_type_policy
+    type: string
+    required: true
+    description: Allowed entity type labels and boundaries.
+
+template: |
+  # Task
+  Refine the initial entity extraction for the current narrative unit.
+
+  # Goal
+  Keep only persistent, story-relevant knowledge-graph entities. Move local visual texture, atmosphere, generic activity, rhetorical examples, and fact-only phrases out of entity_mentions.
+
+  # Source
+  Use the scene inventory, initial entity output, and the evidence snippets already present in those records. The full source text is intentionally not provided.
+
+  # Refinement Policy
+  {refinement_policy}
+
+  # Entity Type Definitions
+  {entity_type_policy}
+
+  # Output Format
+  Return exactly one JSON object using this schema. Include no Markdown or commentary.
+
+  {
+    "unit_id": "string",
+    "entity_mentions": [
+      {
+        "surface": "string",
+        "entity_type": "character | group | organization | location | object | concept | occasion",
+        "canonical_hint": "string",
+        "description": "string",
+        "role_in_unit": "string",
+        "attributes_or_state": "string",
+        "evidence": "string"
+      }
+    ],
+    "scene_tags": [
+      {
+        "surface": "string",
+        "tag_type": "background_element | atmosphere | illustrative_example | generic_activity | minor_visual_detail | other",
+        "reason": "string",
+        "evidence": "string"
+      }
+    ],
+    "unresolved_mentions": [
+      {
+        "surface": "string",
+        "reason": "string",
+        "evidence": "string"
+      }
+    ]
+  }
+
+  # Boundary Rules
+  - Do not keep a full fact, sentence, countdown, or state phrase as an entity. Extract the named event/concept/object inside it if that named thing is trackable.
+  - For countdowns such as "X has N years left" or "N years until X", entity_mentions should contain only X if X is a named event/concept. The time value belongs to facts or episodic memory, not to the entity surface.
+  - Keep named people, groups, organizations, important locations, important objects, named events/occasions, and core concepts when they may matter for later writing continuity.
+  - description should be a concise entity-level description that can help identify the entity across later units. Keep it separate from the entity's local role and current-unit state.
+  - Preserve or lightly clean a supported description from the initial extraction; do not invent biography, hidden function, affiliation, or long-term state not supported by the provided records.
+  - Leave description empty if the provided evidence supports only a local role, temporary state, or visual attribute.
+  - Use only these persistent entity types: character, group, organization, location, object, concept, and occasion.
+  - Use object for concrete devices, vehicles, weapons, props, physical interfaces, media carriers, archives, documents, and visible information carriers.
+  - Use concept for technologies as abstract methods or capabilities, scientific/social/world rules, crises, beliefs, identity concepts, deadlines, countdown concepts, and named abstract narrative ideas.
+  - Do not output technology_or_facility, media_or_document, time_or_deadline, or other as entity_type.
+  - Put incidental wildlife, ruins, debris, grass, puddles, pipes, abandoned vehicles, generic damaged buildings, ambience, light/direction cues, and camera-like visual texture in scene_tags unless the unit makes them named, operated, owned, recurring, or causally important.
+  - Put kinship/professional address terms with no named referent, such as brother, sister-in-law, mentor, or teacher, in unresolved_mentions.
+  - Preserve exact source-language names and evidence snippets from the provided records. Do not invent new evidence spans.
+  - Do not invent entities that are not supported by the current narrative unit.
+  - Use empty arrays when a list has no supported items.
+
+  # Current Narrative Unit Context
+  {unit_context_json}
+
+  # Scene Inventory Suggestions
+  {scene_inventory_json}
+
+  # Initial Entity Output To Refine
+  {initial_entity_json}

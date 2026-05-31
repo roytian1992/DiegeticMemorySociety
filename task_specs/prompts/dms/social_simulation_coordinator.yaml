@@ -1,0 +1,76 @@
+id: social_simulation_coordinator
+category: dms
+name: Social Simulation Coordinator
+description: >
+  Merge per-character social simulations into a compact scene-facing beat plan.
+
+task_variables:
+  - name: coordinator_context_json
+    type: string
+    required: true
+    description: JSON context containing writing intent, attribute cards, and character simulations.
+
+static_variables: []
+
+template: |
+  # Task
+  Coordinate the character simulations into a compact scene-facing social simulation.
+
+  # Purpose
+  Produce an intermediate planning artifact that helps a writer decide how the
+  characters' likely states, actions, dialogue posture, and relationship
+  pressure should interact in the requested scene.
+
+  # Rules
+  - Use only the provided coordinator context.
+  - Do not write final prose.
+  - Treat writing_intent as desired new-scene conditions, not as memory evidence.
+  - If writing_intent asks for a tone or voice, such as "old-soldier voice", keep it as a requested dialogue texture. Do not rewrite it as established identity, career, rank, or biography.
+  - Keep scene_beats aligned with the writing intent, but avoid adding unsupported facts.
+  - Preserve tension between characters when supported; do not force agreement or conflict.
+  - Use refs already present in the provided cards or character simulations.
+  - Put intent-only details in intent_basis. Put cited prior-memory support in memory_basis. Do not cite refs for intent-only details.
+  - New scene mechanics from writing_intent, such as route, return flight, sea-skimming, alarms, hazards, ruins, debris, or destination, belong in intent_basis unless prior memory explicitly supports the same detail.
+  - salient_past_actions are prior events for context. Do not repeat them as new-scene beats unless writing_intent explicitly asks to echo that action.
+  - Do not turn requested tone labels such as "old soldier voice" into an established identity unless the cards support that identity.
+  - Write all natural-language fields in Chinese. Keep JSON keys and enum labels in English.
+  - Output only JSON.
+
+  # Output Schema
+  {
+    "simulation_id": "string",
+    "prefix_boundary": "string",
+    "scene_beats": [
+      {
+        "beat": "string",
+        "participants": ["string"],
+        "purpose": "string",
+        "intent_basis": ["string"],
+        "memory_basis": ["M1", "R1"],
+        "risks": ["string"]
+      }
+    ],
+    "character_dynamics": [
+      {
+        "source": "string",
+        "target": "string",
+        "dynamic": "string",
+        "refs": ["M1", "R1"]
+      }
+    ],
+    "memory_risks": [
+      {
+        "risk": "string",
+        "refs": ["M1", "R1"]
+      }
+    ],
+    "writer_guidance": [
+      {
+        "guidance": "string",
+        "refs": ["M1", "R1"]
+      }
+    ]
+  }
+
+  # Coordinator Context
+  {coordinator_context_json}

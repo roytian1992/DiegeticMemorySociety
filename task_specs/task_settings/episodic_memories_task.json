@@ -1,0 +1,20 @@
+{
+  "task": "episodic_memories",
+  "prompt_id": "dms/episodic_memories",
+  "task_name": "情节记忆抽取",
+  "extraction_policy": [
+    "Every memory and entity link must be supported by current narrative-unit text or extracted-candidate evidence.",
+    "Write all natural-language output values in the same language as the current narrative unit, except for exact names, codes, and schema labels.",
+    "Preserve the order of events and revelations within the current narrative unit.",
+    "Extract only memories that can affect later writing continuity, entity state, entity knowledge, or relationship reasoning.",
+    "Prefer 3 to 8 episodic memories for an ordinary narrative unit; use fewer when the unit is mostly visual or atmospheric.",
+    "Do not create episodic memories solely for open questions, because open questions are stored in scene context.",
+    "Do not duplicate the same fact as both an observation and a state_change unless an explicit before/after change appears in the source.",
+    "Link memories only to entities that appear in the extracted KG entity candidates for this unit.",
+    "Every evidence field must be an exact contiguous substring copied from the current narrative unit's title, subtitle, or content.",
+    "Do not use paraphrased evidence, translated evidence, shortened evidence with ellipses, or text copied only from extracted candidates.",
+    "Do not create entity links for ordinary body parts, broad generic concepts, or deictic phrases unless they are explicit extracted KG candidates.",
+    "Do not output relationship_observations in this task; durable relationships are extracted by a separate task.",
+    "The output must be parseable JSON."
+  ]
+}

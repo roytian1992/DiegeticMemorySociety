@@ -1,0 +1,72 @@
+id: visibility_notes
+category: dms
+name: Visibility Notes
+description: >
+  Identify who can know, believe, or not know extracted facts in one narrative unit.
+
+task_variables:
+  - name: unit_json
+    type: string
+    required: true
+    description: JSON object for one ordered narrative unit.
+  - name: extracted_candidates
+    type: string
+    required: true
+    description: JSON/text from prior extraction results for the current narrative unit.
+
+static_variables:
+  - name: extraction_policy
+    type: string
+    required: true
+    description: Project-level extraction rules.
+
+template: |
+  # Task
+  Fill the visibility JSON for the current narrative unit.
+
+  # Source
+  Base visibility judgments on the current narrative-unit text and the extracted candidates.
+
+  # What To Capture
+  - visibility_records: for important facts/events, record what a specific character knows, believes, suspects, misunderstands, observes, hears, or remains unaware of.
+  - hidden_or_future_sensitive_items: information in this unit that is available to narration or some characters but not to others.
+
+  # Global Constraints
+  {extraction_policy}
+
+  # Output Format
+  Return exactly one JSON object using this schema. Include no Markdown or commentary.
+
+  {
+    "unit_id": "string",
+    "visibility_records": [
+      {
+        "fact_or_event": "string",
+        "character": "string",
+        "visibility": "observed | told | heard | inferred | believes | suspects | misbelieves | unaware | narrator_only",
+        "evidence": "string"
+      }
+    ],
+    "hidden_or_future_sensitive_items": [
+      {
+        "item": "string",
+        "hidden_from": ["string"],
+        "reason": "string",
+        "evidence": "string"
+      }
+    ]
+  }
+
+  # Field Rules
+  - unit_id must match the input narrative unit.
+  - visibility must be one of the enum labels shown in the schema.
+  - hidden_from should list the characters or groups who do not know or should not see the item.
+  - reason should briefly explain why the item is hidden, misbelieved, or reader-only.
+  - evidence must be a short verbatim span from the current narrative unit or extracted candidates.
+  - Use empty arrays when a list has no supported items.
+
+  # Current Narrative Unit
+  {unit_json}
+
+  # Extracted Candidates
+  {extracted_candidates}

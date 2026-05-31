@@ -1,0 +1,13 @@
+{
+  "task": "scene_event_candidates",
+  "prompt_id": "dms/scene_event_candidates",
+  "task_name": "场景事件候选抽取",
+  "extraction_policy": [
+    "Every event, state change, and knowledge transfer must be supported by evidence from the current narrative-unit text.",
+    "Base candidates on the current narrative unit.",
+    "Write all natural-language output values in the same language as the current narrative unit, except for exact names, codes, and schema labels.",
+    "Prioritize content that changes character knowledge, entity state, relationships, world rules, or open narrative threads.",
+    "Use prior context for naming continuity and duplicate avoidance.",
+    "The output must be parseable JSON."
+  ]
+}

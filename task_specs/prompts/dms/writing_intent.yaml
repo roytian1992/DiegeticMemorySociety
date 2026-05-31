@@ -1,0 +1,54 @@
+id: writing_intent
+category: dms
+name: Writing Intent
+description: >
+  Extract an abstract writing intent from one target narrative unit for
+  high-level-idea retrieval evaluation.
+
+task_variables:
+  - name: unit_json
+    type: string
+    required: true
+    description: JSON object for one target narrative unit.
+
+static_variables:
+  - name: intent_policy
+    type: string
+    required: true
+    description: Project-level writing-intent abstraction rules.
+
+template: |
+  # Task
+  Extract a high-level writing intent from the current narrative unit.
+
+  # Purpose
+  The output will be used later as the only author-provided input to a memory retrieval test. It should read like a natural author brief for what to write next.
+
+  # Source
+  Base the output on the current narrative-unit text only. Treat the title, subtitle, and body as source text.
+
+  # Intent Policy
+  {intent_policy}
+
+  # Output Format
+  Return exactly one JSON object using this schema. Include no Markdown or commentary.
+
+  {
+    "unit_id": "string",
+    "writing_intent": "string"
+  }
+
+  # Field Rules
+  - unit_id must match the input narrative unit.
+  - writing_intent must be one compact paragraph, usually one to three sentences.
+  - Write the intent in the same language as the source.
+  - Capture the broad authorial purpose: narrative function, emotional direction, relationship dynamic, atmosphere, transition, pressure, or stakes.
+  - Keep concrete anchors that an author would naturally know when proposing the scene, such as central character names, main location, key vehicle/facility, mission target, or immediate setup.
+  - Do not over-abstract the intent into anonymous roles if the source clearly centers named characters or objects.
+  - Do not turn the intent into a full synopsis, outline, beat list, or evidence list.
+  - Avoid exact dialogue and overly specific choreography unless a concrete action is necessary to state the scene's writing purpose.
+  - Return no fields beyond unit_id and writing_intent.
+  - Do not include retrieval instructions such as what to retrieve, query, recall, look up, or rank.
+
+  # Current Narrative Unit
+  {unit_json}

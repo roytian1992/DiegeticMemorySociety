@@ -1,0 +1,17 @@
+{
+  "task": "durable_relationships",
+  "prompt_id": "dms/durable_relationships",
+  "task_name": "长期实体关系抽取",
+  "extraction_policy": [
+    "Every relationship observation must be supported by current narrative-unit text.",
+    "Write all natural-language output values in the same language as the current narrative unit, except for exact names, codes, and schema labels.",
+    "Use only source_entity and target_entity names that appear in the extracted KG entity candidates for this unit.",
+    "Extract only durable story-state relationships that may persist beyond the current narrative unit, including explicitly stated mentorship, teacher/student or master/apprentice roles, explicitly legal guardianship/custody, care commitments, teammate/comrade or shared mission bonds, protection duties, family ties, affiliation, command/reporting, and explicit long-term responsibility.",
+    "Use care_commitment_to or care_responsibility_for for promises such as 'I will take care of him'; do not upgrade care, advice, familiarity, or operation reminders into legal guardianship, kinship, mentorship, command, or work hierarchy unless that formal role is explicit in the source text.",
+    "A shared activity is not enough by itself; teammate/comrade/mission_partner requires a durable shared role, mission, unit, or profession anchored in the current text.",
+    "Do not extract one-off actions, demonstrations, addressing, looking at, analyzing, reviewing, speaking to, displayed-on relations, physical contact, or temporary tool use as relationships.",
+    "Every evidence field must be an exact contiguous substring copied from the current narrative unit's title, subtitle, or content.",
+    "Use an empty relationship_observations array when no durable relationship is directly supported.",
+    "The output must be parseable JSON."
+  ]
+}

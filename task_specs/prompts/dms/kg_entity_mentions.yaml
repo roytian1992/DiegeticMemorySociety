@@ -1,0 +1,108 @@
+id: kg_entity_mentions
+category: dms
+name: KG Entity Mentions
+description: >
+  Extract evidence-bound entity mentions from one narrative unit.
+
+task_variables:
+  - name: unit_json
+    type: string
+    required: true
+    description: JSON object for one ordered narrative unit.
+  - name: prior_entity_context
+    type: string
+    required: false
+    description: Optional prior prefix entity registry or summary.
+
+static_variables:
+  - name: extraction_policy
+    type: string
+    required: true
+    description: Project-level extraction rules.
+  - name: entity_type_policy
+    type: string
+    required: true
+    description: Allowed entity type labels and boundaries.
+
+template: |
+  # Task
+  Fill the entity mention JSON for the current narrative unit.
+
+  # Source
+  Base mentions, attributes, and evidence on the current narrative-unit text. Use prior entity context for alias alignment and author-defined baseline descriptions.
+
+  # What To Capture
+  Capture explicit, important entity mentions that may need to be tracked later for writing continuity. Use only these persistent entity types: character, group, organization, location, object, concept, and occasion.
+
+  Use scene_tags for locally useful low-value context that should not become persistent knowledge-graph entities, such as background elements, atmosphere, illustrative examples, generic activities, or minor visual details.
+
+  # Global Constraints
+  {extraction_policy}
+
+  # Entity Type Definitions
+  {entity_type_policy}
+
+  # Prior Entity Context
+  {prior_entity_context}
+
+  # Output Format
+  Return exactly one JSON object using this schema. Include no Markdown or commentary.
+
+  {
+    "unit_id": "string",
+    "entity_mentions": [
+      {
+        "surface": "string",
+        "entity_type": "character | group | organization | location | object | concept | occasion",
+        "canonical_hint": "string",
+        "description": "string",
+        "role_in_unit": "string",
+        "attributes_or_state": "string",
+        "evidence": "string"
+      }
+    ],
+    "scene_tags": [
+      {
+        "surface": "string",
+        "tag_type": "background_element | atmosphere | illustrative_example | generic_activity | minor_visual_detail | other",
+        "reason": "string",
+        "evidence": "string"
+      }
+    ],
+    "unresolved_mentions": [
+      {
+        "surface": "string",
+        "reason": "string",
+        "evidence": "string"
+      }
+    ]
+  }
+
+  # Field Rules
+  - unit_id must match the input narrative unit.
+  - surface must be a short text span that actually appears in the current narrative unit.
+  - canonical_hint should contain the best supported canonical name only when that name appears in the current unit or prior entity context; otherwise use an empty string.
+  - description should be a concise entity-level description that could help identify the entity across later units, such as who or what it is in the story world. It should be stable enough to reuse outside this unit when supported.
+  - If prior entity context contains an author-defined description for the same entity, treat it as the baseline description. Do not overwrite or contradict it.
+  - The current unit may add a supplemental description only when the text provides new evidence-supported identity information. Do not copy author-only descriptions into evidence fields.
+  - role_in_unit should describe the entity's local role in this narrative unit, such as speaker, observer, device, vehicle, location, document, concept, occasion, or deadline.
+  - attributes_or_state should capture stated identity, status, ownership, or visible attributes.
+  - evidence must be a short verbatim span from the input narrative unit.
+  - Keep description separate from role_in_unit and attributes_or_state: description is the entity's reusable identity; role_in_unit is its local narrative function; attributes_or_state is the state or attribute stated in this unit.
+  - If the current unit only supports a local role or temporary state, leave description empty rather than guessing a biography, function, or long-term status.
+  - occasion is only for a named or clearly trackable event/activity that can plausibly recur, be referenced later, or affect continuity. Do not use occasion for one-off rhetorical examples, generic background actions, or incidental presentation activity.
+  - Use object for concrete devices, vehicles, weapons, props, physical interfaces, media carriers, archives, documents, and visible information carriers.
+  - Use concept for technologies as abstract methods or capabilities, scientific/social/world rules, crises, beliefs, identity concepts, deadlines, countdown concepts, and named abstract narrative ideas.
+  - Do not output technology_or_facility, media_or_document, time_or_deadline, or other as entity_type.
+  - scene_tags is the outlet for low-value context that may help describe the unit but should not participate in future entity memory, relationship tracking, or pre-context retrieval.
+  - Put rhetorical list examples such as a fire, drought, species extinction, or city disappearance in scene_tags as illustrative_example unless the narrative treats that specific item as a trackable event.
+  - Put background screen glow, ambience, crowd/noise texture, and incidental recording/presentation setup in scene_tags unless the item becomes a concrete recurring prop/facility.
+  - In visual environment-heavy passages, put incidental wildlife, ruins, debris, grass, puddles, pipes, abandoned vehicles, generic damaged buildings, and light/direction cues in scene_tags unless they are named, operated, owned, carried forward, or directly affect a later action.
+  - For countdown text such as "X has N years left" or "N years until X", do not make the full countdown phrase an entity. Extract only the named event/concept X as the entity, and leave the remaining time value in facts or memories.
+  - unresolved_mentions is for unclear entity references, ambiguous boundaries, or uncertain types.
+  - Do not extract ordinary body parts, broad generic words, or incidental visual nouns unless the text makes them important trackable story entities.
+  - Do not create a standalone entity from a deictic phrase such as this, here, there, he, she, it, this wire, or this place unless the same text directly names the referent.
+  - Use empty arrays when a list has no supported items.
+
+  # Current Narrative Unit
+  {unit_json}

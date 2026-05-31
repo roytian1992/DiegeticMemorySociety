@@ -1,0 +1,13 @@
+{
+  "task": "scene_inventory",
+  "prompt_id": "dms/scene_inventory",
+  "task_name": "场景清单抽取",
+  "extraction_policy": [
+    "Every structured item must be supported by evidence from the current narrative-unit text.",
+    "Base the output only on the current narrative unit.",
+    "Write all natural-language output values in the same language as the current narrative unit, except for exact names, codes, and schema labels.",
+    "Keep stated facts separate from questions or uncertainty.",
+    "Use empty strings or arrays when the text does not support a field.",
+    "The output must be parseable JSON."
+  ]
+}

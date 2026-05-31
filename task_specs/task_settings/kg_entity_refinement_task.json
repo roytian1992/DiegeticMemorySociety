@@ -1,0 +1,28 @@
+{
+  "task": "kg_entity_refinement",
+  "prompt_id": "dms/kg_entity_refinement",
+  "task_name": "知识图谱实体候选轻量重判",
+  "refinement_policy": [
+    "Do not perform fresh extraction. Classify and normalize only the provided initial candidates.",
+    "Keep only entities that are important enough to track for later story continuity.",
+    "Keep or lightly clean supported entity-level descriptions. Do not convert local roles, temporary states, or visual attributes into long-term descriptions.",
+    "Do not keep full fact phrases, countdown phrases, state sentences, rhetorical examples, or local visual texture as persistent entities.",
+    "For countdown candidates, keep the named event or concept as the entity and leave the remaining time value to facts or episodic memory.",
+    "Use scene_tags for incidental background, atmosphere, generic activity, minor visual detail, and illustrative examples.",
+    "Use unresolved_mentions for address terms or references whose concrete referent is not named in the provided evidence.",
+    "Keep evidence snippets exactly as provided by the initial extraction or scene inventory records.",
+    "The output must be parseable JSON."
+  ],
+  "entity_type_policy": [
+    "character: a named person, a clearly individual role, or a trackable speaker/actor.",
+    "group: a collective, team, unnamed plurality, or identity class.",
+    "organization: an institution, government, company, project organization, army, or formal group.",
+    "location: a place, building, space, planet, city, base, or other locatable setting that may matter later.",
+    "object: a concrete important object, prop, device, vehicle, machine, weapon, physical interface, media carrier, document, archive, or other non-living entity that may matter later.",
+    "concept: an abstract idea, scientific principle, social rule, world rule, belief, method, capability, memory, perception, identity, or narrative core concept.",
+    "occasion: a named or clearly trackable event, activity, ceremony, meeting, experiment, operation, disaster, accident, campaign, plan, or recurring occasion.",
+    "Technologies as abstract methods or capabilities should be concept; concrete devices, systems, vehicles, and interfaces should be object; research rooms, bases, labs, and buildings should be location.",
+    "Dates, countdowns, and deadlines should be stated facts, memory temporal metadata, or concept anchors, not a separate entity type.",
+    "scene_tags are not persistent entities. Use background_element, atmosphere, illustrative_example, generic_activity, minor_visual_detail, or other for useful but low-value local context."
+  ]
+}

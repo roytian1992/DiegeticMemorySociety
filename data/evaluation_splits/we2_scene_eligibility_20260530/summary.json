@@ -1,0 +1,34 @@
+{
+  "script_path": "data/raw/流浪地球2剧本.json",
+  "output_dir": "data/evaluation_splits/we2_scene_eligibility_20260530",
+  "scene_count": 373,
+  "memory_prefix_count": 367,
+  "writing_eval_target_count": 194,
+  "audit_eval_target_count": 337,
+  "excluded_from_generation_eval_count": 179,
+  "unit_type_counts": {
+    "character_action_scene": 1,
+    "conflict_scene": 33,
+    "dialogue_scene": 161,
+    "empty": 6,
+    "establishing_or_visual_description": 30,
+    "montage_or_transition": 111,
+    "pure_visual_vfx": 31
+  },
+  "writing_eval_policy_counts": {
+    "exclude": 179,
+    "include": 194
+  },
+  "audit_eval_policy_counts": {
+    "exclude": 36,
+    "include": 337
+  },
+  "artifact_paths": {
+    "all": "data/evaluation_splits/we2_scene_eligibility_20260530/scene_eligibility_all.jsonl",
+    "memory_prefix": "data/evaluation_splits/we2_scene_eligibility_20260530/memory_prefix.jsonl",
+    "writing_eval_targets": "data/evaluation_splits/we2_scene_eligibility_20260530/writing_eval_targets.jsonl",
+    "audit_eval_targets": "data/evaluation_splits/we2_scene_eligibility_20260530/audit_eval_targets.jsonl",
+    "excluded_from_generation_eval": "data/evaluation_splits/we2_scene_eligibility_20260530/excluded_from_generation_eval.jsonl",
+    "summary": "data/evaluation_splits/we2_scene_eligibility_20260530/summary.json"
+  }
+}

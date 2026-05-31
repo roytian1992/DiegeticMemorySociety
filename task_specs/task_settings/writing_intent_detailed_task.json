@@ -1,0 +1,15 @@
+{
+  "task": "writing_intent_detailed",
+  "prompt_id": "dms/writing_intent_detailed",
+  "task_name": "详细写作意图抽取",
+  "intent_policy": [
+    "This task is for retrieval-conditioned writing and evaluation when the author has a reasonably clear scene direction.",
+    "Output only the author-facing detailed writing intent.",
+    "Keep the output schema minimal; do not add seed entities, retrieval needs, query plans, simulation plans, scene beats, or answer hints as separate fields.",
+    "Keep natural author-facing anchors such as central character names, main location, key object, vehicle, facility, organization, occasion, mission target, or immediate setup when they are important to the writing intent.",
+    "Capture the broad scene function, emotional direction, relationship dynamic, atmosphere, pressure, transition, and stakes when the source supports them.",
+    "Avoid full synopsis, beat lists, exact dialogue, evidence spans, and overly specific choreography.",
+    "Avoid retrieval instructions such as what to retrieve, query, recall, look up, or rank.",
+    "The output must be parseable JSON."
+  ]
+}

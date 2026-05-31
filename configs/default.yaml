@@ -1,0 +1,16 @@
+project:
+  name: diegetic-memory-society
+
+paths:
+  prompt_dir: task_specs/prompts
+  raw_script: data/raw/流浪地球2剧本.json
+  output_root: outputs
+
+script_adapter:
+  source_format: wandering_earth_scene_json
+  unit_type: scene
+
+prompts:
+  scene_inventory: dms/scene_inventory
+  scene_event_candidates: dms/scene_event_candidates
+  visibility_notes: dms/visibility_notes

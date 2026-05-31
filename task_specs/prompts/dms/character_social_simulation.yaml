@@ -1,0 +1,90 @@
+id: character_social_simulation
+category: dms
+name: Character Social Simulation
+description: >
+  Simulate one character's likely scene-facing behavior from an evidence-bound
+  attribute card and a writing intent.
+
+task_variables:
+  - name: simulation_context_json
+    type: string
+    required: true
+    description: JSON context containing one attribute card, writing intent, and other visible cards.
+
+static_variables: []
+
+template: |
+  # Task
+  Simulate how the target character would probably participate in the requested narrative scene.
+
+  # Purpose
+  The result is not final prose. It is an intermediate reasoning artifact for
+  writing: likely internal state, actions, dialogue posture, interaction
+  pressure, and risks to avoid.
+
+  # Rules
+  - Use only the provided simulation context.
+  - Treat writing_intent as a request for the new scene, not as evidence about the character's established past, identity, profession, rank, or relationship.
+  - If writing_intent asks for a tone or voice, such as "old-soldier voice", keep it as a requested dialogue texture. Do not rewrite it as an established identity, career, rank, or biography unless the attribute card supports that fact.
+  - Respect the target attribute card's prefix_boundary.
+  - Treat hard_constraints as non-negotiable.
+  - Treat simulation_risks as cautions, not bans.
+  - Ground claims in refs already present in the attribute card. Do not invent new ref ids.
+  - Do not attach memory refs to details that come only from writing_intent. Put those details in intent_assumptions instead.
+  - New scene mechanics from writing_intent, such as route, return flight, sea-skimming, alarms, hazards, ruins, debris, or destination, are intent assumptions unless the attribute card explicitly supports the same detail.
+  - salient_past_actions are prior events for context. Do not repeat them as new-scene actions unless writing_intent explicitly asks to echo that action.
+  - Do not invent technical hazards, official roles, kinship, military background, or world facts unless they are supported by refs or explicitly requested as scene conditions in writing_intent.
+  - Keep the simulation compact, scene-facing, and useful for a writer.
+  - Write all natural-language fields in Chinese. Keep JSON keys and enum labels in English.
+  - Output only JSON.
+
+  # Output Schema
+  {
+    "character": "string",
+    "prefix_boundary": "string",
+    "intent_assumptions": ["string"],
+    "likely_internal_state": [
+      {
+        "value": "string",
+        "status": "explicit | inferred",
+        "refs": ["M1", "R1"]
+      }
+    ],
+    "likely_actions": [
+      {
+        "value": "string",
+        "status": "explicit | inferred",
+        "refs": ["M1", "R1"]
+      }
+    ],
+    "likely_dialogue": [
+      {
+        "value": "string",
+        "status": "explicit | inferred",
+        "refs": ["M1", "R1"]
+      }
+    ],
+    "interaction_pressure": [
+      {
+        "target": "string",
+        "pressure": "string",
+        "status": "explicit | inferred",
+        "refs": ["M1", "R1"]
+      }
+    ],
+    "avoid_or_risks": [
+      {
+        "risk": "string",
+        "refs": ["M1", "R1"]
+      }
+    ],
+    "memory_basis": [
+      {
+        "point": "string",
+        "refs": ["M1", "R1"]
+      }
+    ]
+  }
+
+  # Simulation Context
+  {simulation_context_json}

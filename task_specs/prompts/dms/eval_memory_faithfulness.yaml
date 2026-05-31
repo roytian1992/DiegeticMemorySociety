@@ -1,0 +1,88 @@
+id: eval_memory_faithfulness
+category: dms
+name: Evaluation Memory Faithfulness
+description: >
+  Judge whether a candidate passage remains faithful to the retrieved memory packet.
+
+task_variables:
+  - name: writing_intent
+    type: string
+    required: true
+    description: Original writing intent.
+  - name: memory_packet
+    type: string
+    required: true
+    description: Prompt-facing memory packet available to the writer.
+  - name: candidate_label
+    type: string
+    required: true
+    description: Label for the passage being judged.
+  - name: candidate_text
+    type: string
+    required: true
+    description: Candidate narrative passage.
+
+static_variables: []
+
+template: |
+  # Task
+  Evaluate memory faithfulness for the candidate narrative passage.
+
+  # What To Judge
+  Judge whether the passage is compatible with the memory packet available
+  before writing: entity identities and states, durable relationships, important
+  prior facts, world constraints, unresolved threads, and known scene setup.
+
+  # Important Interpretation
+  The candidate is allowed to create new local action, dialogue, atmosphere, and
+  sensory detail for the requested next passage. Penalize only when it contradicts
+  the memory packet, invents major background facts that should have been grounded
+  in memory, changes known relationships or states without support, or leaks
+  memory indexes/reference labels into final prose.
+  The writing intent is not memory evidence. It may request a tone, trope,
+  scene condition, or interaction shape, but those requests do not establish
+  past facts, identity labels, official roles, kinship, ranks, professions, or
+  durable relationships.
+
+  # Score Scale
+  - 5: fully faithful; no meaningful contradiction or unsupported major background fact.
+  - 4: mostly faithful; minor unsupported detail or mild tension with memory.
+  - 3: mixed; some questionable memory use but the core continuity survives.
+  - 2: weak; clear contradiction or important unsupported background invention.
+  - 1: unfaithful; multiple serious contradictions, wrong entities, or visible memory/reference leakage.
+
+  # Rules
+  - Separate three sources in your rationale: memory-backed facts, writing-intent-only conditions, and candidate-created local details.
+  - Do not call a tone request or style phrase from the writing intent an established fact. For example, "old-soldier voice" is a requested dialogue texture unless the memory packet explicitly states the character is a veteran or soldier.
+  - Do not claim a character is a guardian, relative, soldier, pilot, instructor, commander, officer, scientist, engineer, or other formal role unless the memory packet explicitly supports that label.
+  - If a candidate uses a writing-intent-only condition without contradicting memory, treat it as allowed local scene setup, not as memory support.
+  - If your rationale mentions a fact as supported, it must be traceable to the memory packet, not merely to the writing intent or candidate passage.
+  - Output only JSON.
+  - Use an integer score from 1 to 5.
+
+  # Output Schema
+  {
+    "candidate_label": "string",
+    "score": 1,
+    "rationale": "string",
+    "supported_points": ["string"],
+    "issues": [
+      {
+        "issue_type": "contradiction | unsupported_major_fact | wrong_entity_state | wrong_relationship | reference_leak | other",
+        "description": "string",
+        "severity": "minor | major"
+      }
+    ]
+  }
+
+  # Writing Intent
+  {writing_intent}
+
+  # Memory Packet
+  {memory_packet}
+
+  # Candidate Label
+  {candidate_label}
+
+  # Candidate Passage
+  {candidate_text}

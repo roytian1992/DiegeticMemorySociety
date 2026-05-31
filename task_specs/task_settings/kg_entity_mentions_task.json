@@ -1,0 +1,34 @@
+{
+  "task": "kg_entity_mentions",
+  "prompt_id": "dms/kg_entity_mentions",
+  "task_name": "知识图谱实体提及抽取",
+  "extraction_policy": [
+    "Every entity mention must be supported by evidence from the current narrative-unit text.",
+    "Base entity mentions on the current narrative unit.",
+    "Write all natural-language output values in the same language as the current narrative unit, except for exact names, codes, and schema labels.",
+    "surface must preserve the exact name or phrase used in the current narrative unit.",
+    "canonical_hint should use prior context only for evidence-supported alias alignment.",
+    "description is an entity-level reusable description, not the entity's local role in this unit and not a temporary state. Leave it empty when the unit does not support one.",
+    "Author-defined descriptions in prior context are baseline descriptions. Do not overwrite or contradict them; add only evidence-supported supplemental descriptions from the current unit.",
+    "Extract only entities that are important enough to track for later story continuity.",
+    "Prefer specific named or trackable entities over broad descriptive wording.",
+    "Use scene_tags, not entity_mentions, for low-value context that describes the unit but should not be tracked as a persistent entity.",
+    "Do not extract ordinary body parts, broad generic words, or incidental visual nouns unless the text makes them important trackable story entities.",
+    "Treat rhetorical examples, background texture, atmosphere, and generic activities as scene_tags unless the narrative makes them named or trackable continuity objects.",
+    "In visual environment-heavy passages, treat incidental wildlife, ruins, debris, grass, puddles, pipes, abandoned vehicles, generic damaged buildings, and light or direction cues as scene_tags unless they are named, operated, owned, carried forward, or directly affect later action.",
+    "Put deictic references such as this, here, there, he, she, it, this wire, or this place in unresolved_mentions unless the same text directly names the referent.",
+    "The output must be parseable JSON."
+  ],
+  "entity_type_policy": [
+    "character: a named person, a clearly individual role, or a trackable speaker/actor.",
+    "group: a collective, team, unnamed plurality, or identity class such as researchers, crowds, or readers-as-addressed groups.",
+    "organization: an institution, government, company, project organization, army, or formal group.",
+    "location: a place, building, space, planet, city, base, or other locatable setting.",
+    "object: a concrete object, prop, device, vehicle, machine, weapon, physical interface, media carrier, document, archive, or other non-living entity.",
+    "concept: an abstract idea, scientific principle, social rule, world rule, belief, method, capability, memory, perception, identity, or narrative core concept.",
+    "occasion: a named or clearly trackable event, activity, ceremony, meeting, experiment, operation, disaster, accident, campaign, plan, or recurring occasion that may be referenced later or affect continuity. Do not use occasion for rhetorical examples, generic background activity, or incidental presentation/recording setup.",
+    "Technologies as abstract methods or capabilities should be concept; concrete devices, systems, vehicles, and interfaces should be object; research rooms, bases, labs, and buildings should be location.",
+    "Dates, countdowns, and deadlines should be stated facts, memory temporal metadata, or concept anchors, not a separate entity type.",
+    "scene_tags are not persistent entities. Use background_element, atmosphere, illustrative_example, generic_activity, minor_visual_detail, or other for useful but low-value local context."
+  ]
+}

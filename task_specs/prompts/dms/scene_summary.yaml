@@ -1,0 +1,62 @@
+id: scene_summary
+category: dms
+name: Scene Summary
+description: >
+  Generate a compact narrative-unit recap and semantic retrieval text.
+
+task_variables:
+  - name: unit_json
+    type: string
+    required: true
+    description: JSON object for one ordered narrative unit.
+
+static_variables:
+  - name: summary_policy
+    type: string
+    required: true
+    description: Project-level summary rules.
+
+template: |
+  # Task
+  Write a concise summary record for the current narrative unit.
+
+  # Source
+  Base the output only on the current narrative-unit text. Treat the title, subtitle, and body as source text.
+
+  # What To Produce
+  - summary: a readable recap that helps an author remember what has happened before later writing.
+  - salient_points: the most important concrete points from this unit.
+  - continuity_hooks: compact anchors that may matter later, such as unresolved pressure, changed states, important setup, or information a writer should keep in mind.
+  - retrieval_text: a standalone semantic-search document that combines the summary, salient points, continuity hooks, and concrete names or terms from the unit.
+
+  # Summary Policy
+  {summary_policy}
+
+  # Output Format
+  Return exactly one JSON object using this schema. Include no Markdown or commentary.
+
+  {
+    "unit_id": "string",
+    "summary": "string",
+    "salient_points": [
+      "string"
+    ],
+    "continuity_hooks": [
+      "string"
+    ],
+    "retrieval_text": "string"
+  }
+
+  # Field Rules
+  - unit_id must match the input narrative unit.
+  - Write natural-language fields in the same language as the current narrative unit, except for exact names, codes, and schema labels.
+  - Keep concrete author-facing anchors that the unit itself provides, including character names, locations, organizations, technologies or facilities, important objects, occasions, concepts, stated deadlines, and explicit emotional or strategic pressure.
+  - summary should usually be 2 to 4 sentences. Use one sentence when the unit is very short or mostly atmospheric.
+  - salient_points should usually contain 3 to 8 items. Use fewer when the text supports fewer.
+  - continuity_hooks should contain only hooks supported by this unit. Use an empty array when no future-relevant hook is supported.
+  - retrieval_text must be concise but searchable as a standalone text. It should not be a query plan.
+  - Do not add fields such as seed_entities, retrieval_needs, query_plan, entity_mentions, episodic_memories, or relationship_observations.
+  - Do not invent motivations, facts, names, relationships, or future outcomes that are not supported by this unit.
+
+  # Current Narrative Unit
+  {unit_json}

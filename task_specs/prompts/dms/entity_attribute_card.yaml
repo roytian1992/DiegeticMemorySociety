@@ -1,0 +1,133 @@
+id: entity_attribute_card
+category: dms
+name: Entity Attribute Card
+description: >
+  Infer an evidence-bound writing-facing attribute card for one entity.
+
+task_variables:
+  - name: entity_context_json
+    type: string
+    required: true
+    description: JSON context for one entity, including retrieved memories, relations, and references.
+
+static_variables: []
+
+template: |
+  # Task
+  Build a writing-facing attribute card for the entity.
+
+  # Purpose
+  The card will be used before character/social simulation. It should compress
+  scattered memory into attributes that help an author or simulator decide how
+  this entity is likely to behave, speak, constrain the scene, or affect other
+  entities at the given prefix boundary.
+
+  # Evidence Rules
+  - Use only the provided entity context.
+  - Every attribute must cite one or more provided memory indexes or reference ids.
+  - Distinguish explicit facts from inferred traits.
+  - Do not infer demographic facts such as exact age, birthplace, rank, family members, or profession unless the context explicitly supports them.
+  - It is allowed to infer personality, speaking style, values, emotional tendencies, relationship stance, and behavior tendencies when multiple memories or dialogue cues support them.
+  - A one-time action is not a behavior tendency by itself. Put important one-time actions in salient_past_actions. Promote an action to behavior_tendencies only when the evidence supports a repeatable tendency, habit, or decision pattern.
+  - Attribute counts may vary. Do not force empty categories; use empty arrays when unsupported.
+  - Keep the card compact and useful for writing, not encyclopedic.
+  - Write all natural-language attribute values in Entity Context output_language. Keep JSON keys and enum labels in English.
+  - prefix_boundary must exactly match Entity Context prefix_boundary_label.
+  - Do not turn indirect kinship address terms, honorifics, or memorial speech into exact family relationships unless the context explicitly identifies the relationship to this entity. Put uncertain kinship claims in uncertain_or_unsupported.
+  - Do not upgrade care, protection, guidance, promise, or familiarity into a formal social/legal/work role such as guardian, relative, commander, subordinate, teacher, or official partner unless the evidence explicitly states that role. If the evidence says one entity promises to take care of another, state the promise itself.
+  - Formal identity labels require explicit evidence wording. Do not infer guardian, instructor, teacher, soldier, veteran, pilot, commander, officer, engineer, scientist, doctor, or project staff merely from behavior, advice, technical familiarity, or requested writing tone.
+  - Preferred boundary examples:
+    - Evidence: "I will take care of him." Good: "promises to take care of him." Bad: "legal guardian" or "guardian."
+    - Evidence: "slow down" during operation. Good: "gives practical operation guidance." Bad: "instructor," "commander," or "formal superior."
+    - Writing request asks for "old-soldier voice." Good: "requested dialogue texture." Bad: "is a veteran" unless evidence states it.
+  - hard_constraints are only for facts that simulation must not contradict because the evidence makes them clear.
+  - Phrase hard_constraints as factual boundaries, not as writing instructions. Do not use wording such as "must mention", "must include", or "must write"; use wording such as "the context establishes that..." or a compact factual statement.
+  - simulation_risks are softer cautions about likely misreadings, overclaims, or unsupported exaggerations.
+  - Do not convert ordinary tendencies, current moods, relationship attitudes, or scene-specific reactions into permanent prohibitions.
+  - Output only JSON.
+
+  # Output Schema
+  {
+    "entity_id": "string",
+    "canonical_name": "string",
+    "entity_type": "character | group | organization | location | object | concept | occasion",
+    "prefix_boundary": "string",
+    "role_in_story": [
+      {
+        "value": "string",
+        "status": "explicit | inferred",
+        "refs": ["M1", "R1"]
+      }
+    ],
+    "current_state": [
+      {
+        "value": "string",
+        "status": "explicit | inferred",
+        "refs": ["M1", "R1"]
+      }
+    ],
+    "salient_past_actions": [
+      {
+        "action": "string",
+        "status": "explicit | inferred",
+        "refs": ["M1", "R1"]
+      }
+    ],
+    "stable_traits": [
+      {
+        "trait": "string",
+        "status": "explicit | inferred",
+        "refs": ["M1", "R1"]
+      }
+    ],
+    "speaking_style": [
+      {
+        "trait": "string",
+        "status": "explicit | inferred",
+        "refs": ["M1", "R1"]
+      }
+    ],
+    "values_or_motivations": [
+      {
+        "value": "string",
+        "status": "explicit | inferred",
+        "refs": ["M1", "R1"]
+      }
+    ],
+    "relationship_stances": [
+      {
+        "target": "string",
+        "stance": "string",
+        "status": "explicit | inferred",
+        "refs": ["M1", "R1"]
+      }
+    ],
+    "behavior_tendencies": [
+      {
+        "tendency": "string",
+        "status": "explicit | inferred",
+        "refs": ["M1", "R1"]
+      }
+    ],
+    "hard_constraints": [
+      {
+        "constraint": "string",
+        "refs": ["M1", "R1"]
+      }
+    ],
+    "simulation_risks": [
+      {
+        "risk": "string",
+        "refs": ["M1", "R1"]
+      }
+    ],
+    "uncertain_or_unsupported": [
+      {
+        "claim": "string",
+        "reason": "string"
+      }
+    ]
+  }
+
+  # Entity Context
+  {entity_context_json}

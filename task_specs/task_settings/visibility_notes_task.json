@@ -1,0 +1,12 @@
+{
+  "task": "visibility_notes",
+  "prompt_id": "dms/visibility_notes",
+  "task_name": "场景可见性记录",
+  "extraction_policy": [
+    "Every visibility judgment must be supported by current narrative-unit text or extracted-candidate evidence.",
+    "Assign knowledge only to characters or groups supported by the current unit or extracted candidates.",
+    "Distinguish observed, told, heard, inferred, believes, suspects, misbelieves, unaware, and narrator_only.",
+    "Mark information that is hidden from specific characters or groups.",
+    "The output must be parseable JSON."
+  ]
+}
