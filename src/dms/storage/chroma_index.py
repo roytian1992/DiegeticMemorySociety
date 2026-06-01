@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from dms.progress import print_progress
 from dms.storage.asset_store import get_retrieval_documents
 
 
@@ -61,13 +62,26 @@ def build_chroma_memory_index(config: ChromaMemoryIndexConfig) -> dict[str, Any]
 
     records = get_retrieval_documents(config.db_path)
     batch_size = max(1, int(config.upsert_batch_size))
+    record_batches = _batches(records, batch_size)
+    print_progress(
+        "chroma_index:start",
+        0,
+        len(record_batches),
+        detail=f"documents={len(records)} collection={config.collection_name} persist_dir={persist_dir}",
+    )
     batch_count = 0
-    for batch in _batches(records, batch_size):
+    for batch in record_batches:
         batch_count += 1
         collection.upsert(
             ids=[str(record["doc_id"]) for record in batch],
             documents=[str(record["text"]) for record in batch],
             metadatas=[_chroma_metadata(record) for record in batch],
+        )
+        print_progress(
+            "chroma_index:batch",
+            batch_count,
+            len(record_batches),
+            detail=f"documents={len(batch)}",
         )
 
     return {

@@ -12,6 +12,7 @@ from dms.config import build_openai_client_from_config, embedding_kwargs_from_co
 from dms.evaluation import WritingEvaluationConfig, build_scene_eligibility_splits, evaluate_writing
 from dms.llm import LLMClient, LLMResult
 from dms.parsing import extract_json_value
+from dms.progress import print_progress
 from dms.prompts import YAMLPromptLoader
 from dms.retrieval import MemoryPacketConfig, build_memory_packet, format_memory_packet_markdown
 from dms.runners import SceneOrderedPipelineConfig, run_scene_ordered_pipeline
@@ -229,7 +230,13 @@ def run_writing_benchmark(
 
     target_results: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
-    for target in targets:
+    print_progress(
+        "writing_benchmark:start",
+        0,
+        len(targets),
+        detail=f"output_dir={output_dir} writing_llm_section={config.writing_llm_section}",
+    )
+    for index, target in enumerate(targets, start=1):
         scene = scene_by_id[str(target["scene_id"])]
         target_dir = output_dir / "targets" / scene.scene_id
         try:
@@ -245,6 +252,15 @@ def run_writing_benchmark(
             )
             target_results.append(result)
             _write_jsonl(output_dir / "metrics.jsonl", target_results)
+            print_progress(
+                "writing_benchmark:target",
+                index,
+                len(targets),
+                detail=(
+                    f"status=complete scene={scene.scene_id} completed={len(target_results)} "
+                    f"failures={len(failures)}"
+                ),
+            )
         except Exception as exc:  # noqa: BLE001 - benchmark should record per-target failures.
             failure = {
                 "scene_id": scene.scene_id,
@@ -256,6 +272,15 @@ def run_writing_benchmark(
             failures.append(failure)
             target_dir.mkdir(parents=True, exist_ok=True)
             (target_dir / "error.json").write_text(json.dumps(failure, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            print_progress(
+                "writing_benchmark:target",
+                index,
+                len(targets),
+                detail=(
+                    f"status=failed scene={scene.scene_id} completed={len(target_results)} "
+                    f"failures={len(failures)} error_type={type(exc).__name__}"
+                ),
+            )
             if config.stop_on_error:
                 raise
 
@@ -285,6 +310,7 @@ def _run_one_writing_target(
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     intents_dir = output_dir / "intents"
+    print_progress("writing_target:stage", 0, 7, detail=f"scene={scene.scene_id} stage=start")
     sparse_intent = _extract_intent(
         scene,
         level="sparse",
@@ -294,6 +320,7 @@ def _run_one_writing_target(
         prompt_dir=config.prompt_dir,
         llm_client=llm_client,
     )
+    print_progress("writing_target:stage", 1, 7, detail=f"scene={scene.scene_id} stage=sparse_intent")
     detailed_intent = _extract_intent(
         scene,
         level="detailed",
@@ -303,6 +330,7 @@ def _run_one_writing_target(
         prompt_dir=config.prompt_dir,
         llm_client=llm_client,
     )
+    print_progress("writing_target:stage", 2, 7, detail=f"scene={scene.scene_id} stage=detailed_intent")
     intents = {"sparse": sparse_intent, "detailed": detailed_intent}
 
     target_summary: dict[str, Any] = {
@@ -346,6 +374,15 @@ def _run_one_writing_target(
     memory_md = output_dir / "memory_packet.md"
     memory_json.write_text(json.dumps(memory_packet, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     memory_md.write_text(format_memory_packet_markdown(memory_packet), encoding="utf-8")
+    print_progress(
+        "writing_target:stage",
+        3,
+        7,
+        detail=(
+            f"scene={scene.scene_id} stage=memory_packet entities={len(memory_packet.get('entities') or [])} "
+            f"memories={len(memory_packet.get('episodic_memories') or [])}"
+        ),
+    )
 
     attribute_cards_dir = output_dir / "attribute_cards"
     attribute_summary = build_entity_attribute_cards(
@@ -360,6 +397,12 @@ def _run_one_writing_target(
         ),
         llm_client=llm_client,
     )
+    print_progress(
+        "writing_target:stage",
+        4,
+        7,
+        detail=f"scene={scene.scene_id} stage=attribute_cards cards={attribute_summary.get('card_count')}",
+    )
 
     social_dir = output_dir / "social_simulation"
     social_summary = run_social_simulation(
@@ -371,6 +414,12 @@ def _run_one_writing_target(
             overwrite=True,
         ),
         llm_client=llm_client,
+    )
+    print_progress(
+        "writing_target:stage",
+        5,
+        7,
+        detail=f"scene={scene.scene_id} stage=social_simulation characters={social_summary.get('character_simulation_count')}",
     )
 
     writing_dir = output_dir / "writing"
@@ -393,6 +442,12 @@ def _run_one_writing_target(
         llm_client=writing_llm_client,
         model_config=model_config,
     )
+    print_progress(
+        "writing_target:stage",
+        6,
+        7,
+        detail=f"scene={scene.scene_id} stage=writing chars={writing_summary.get('output', {}).get('body_chars')}",
+    )
 
     evaluation_dir = output_dir / "evaluation"
     evaluation_summary = evaluate_writing(
@@ -407,6 +462,7 @@ def _run_one_writing_target(
         ),
         llm_client=llm_client,
     )
+    print_progress("writing_target:stage", 7, 7, detail=f"scene={scene.scene_id} stage=evaluation")
 
     target_summary.update(
         {

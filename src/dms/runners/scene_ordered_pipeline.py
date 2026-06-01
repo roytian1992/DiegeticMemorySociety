@@ -36,6 +36,7 @@ from dms.parsing import (
     validate_scene_inventory,
     validate_scene_summary,
 )
+from dms.progress import print_progress
 from dms.prompts import YAMLPromptLoader
 from dms.runners.prompt_payloads import narrative_unit_payload
 from dms.scripts.wandering_earth import ScriptScene, load_script_scenes
@@ -172,9 +173,17 @@ def run_scene_ordered_pipeline(
 
     max_workers = min(config.scene_task_concurrency, len(FIRST_WAVE_TASKS))
     chunk_ordinal = len(base_chunk_manifest)
+    processed_chunks = 0
+    print_progress(
+        "scene_ordered:start",
+        0,
+        len(selected_chunks),
+        detail=f"scenes={len(selected)} chunks={len(selected_chunks)} output_root={output_root}",
+    )
     for _scene, chunks in chunks_by_scene:
         for chunk in chunks:
             chunk_ordinal += 1
+            processed_chunks += 1
             first_wave_results: dict[str, _TaskUnitResult] = {}
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = {
@@ -269,6 +278,13 @@ def run_scene_ordered_pipeline(
                     "task_errors": {task: scene_results[task].error for task in ALL_TASKS if scene_results[task].error},
                 }
             )
+            failed_tasks = [task for task in ALL_TASKS if scene_results[task].error]
+            print_progress(
+                "scene_ordered:chunk",
+                processed_chunks,
+                len(selected_chunks),
+                detail=f"unit={chunk.chunk_id} scene={chunk.scene_id} failed_tasks={len(failed_tasks)}",
+            )
 
     task_summaries = {
         task: _write_task_run_summary(
@@ -287,7 +303,9 @@ def run_scene_ordered_pipeline(
 
     memory_summaries: dict[str, Any] = {}
     if not config.dry_run:
+        print_progress("scene_ordered:memory", 0, 1, detail=f"output_root={output_root}")
         memory_summaries = _build_pipeline_memory(output_root, task_contexts, author_entity_context=author_entity_context)
+        print_progress("scene_ordered:memory", 1, 1, detail=f"output_root={output_root}")
 
     summary = {
         "run_type": "scene_ordered_pipeline",
