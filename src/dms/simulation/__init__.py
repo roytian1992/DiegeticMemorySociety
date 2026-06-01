@@ -5,11 +5,12 @@ from dms.simulation.attribute_cards import (
     build_entity_attribute_cards,
     format_attribute_cards_markdown,
 )
+from dms.simulation.formatting import format_social_simulation_markdown, format_social_simulation_writer_packet
 from dms.simulation.social import (
     SocialSimulationConfig,
-    format_social_simulation_markdown,
     run_social_simulation,
 )
+from dms.simulation.verification import verify_social_simulation, verify_writer_packet
 
 __all__ = [
     "AttributeCardConfig",
@@ -17,5 +18,8 @@ __all__ = [
     "build_entity_attribute_cards",
     "format_attribute_cards_markdown",
     "format_social_simulation_markdown",
+    "format_social_simulation_writer_packet",
     "run_social_simulation",
+    "verify_social_simulation",
+    "verify_writer_packet",
 ]

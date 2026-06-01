@@ -35,6 +35,11 @@ class WritingE2EConfig:
     attribute_entity_types: tuple[str, ...] = ("character",)
     attribute_entity_names: tuple[str, ...] = ()
     max_memories_per_entity: int = 16
+    previous_scene_context: str = ""
+    previous_scene_context_path: Path | None = None
+    previous_scene_context_script: Path | None = None
+    previous_scene_context_scene_id: str | None = None
+    previous_scene_context_max_chars: int = 800
     style_reference_path: Path | None = None
     style_reference_script: Path | None = None
     style_reference_scene_id: str | None = None
@@ -97,7 +102,7 @@ def run_writing_e2e(config: WritingE2EConfig) -> dict[str, Any]:
     social_summary = run_social_simulation(
         SocialSimulationConfig(
             attribute_cards_path=attribute_cards_dir / "attribute_cards.json",
-            writing_intent=config.writing_intent,
+            social_simulation_intent=config.writing_intent,
             output_dir=social_simulation_dir,
             prompt_dir=config.prompt_dir,
             overwrite=config.overwrite,
@@ -111,11 +116,16 @@ def run_writing_e2e(config: WritingE2EConfig) -> dict[str, Any]:
             writing_request=config.writing_intent,
             memory_packet_path=memory_packet_md_path,
             attribute_cards_path=attribute_cards_dir / "attribute_cards.md",
-            social_simulation_path=social_simulation_dir / "social_simulation.md",
+            social_simulation_path=social_simulation_dir / "writer_packet.md",
             output_dir=writing_dir,
             model_config_path=config.model_config_path,
             model_section=config.writing_llm_section,
             prompt_dir=config.prompt_dir,
+            previous_scene_context=config.previous_scene_context,
+            previous_scene_context_path=config.previous_scene_context_path,
+            previous_scene_context_script=config.previous_scene_context_script,
+            previous_scene_context_scene_id=config.previous_scene_context_scene_id,
+            previous_scene_context_max_chars=config.previous_scene_context_max_chars,
             style_reference_path=config.style_reference_path,
             style_reference_script=config.style_reference_script,
             style_reference_scene_id=config.style_reference_scene_id,
@@ -168,6 +178,13 @@ def run_writing_e2e(config: WritingE2EConfig) -> dict[str, Any]:
             "writing_intent": config.writing_intent,
             "before_scene_id": config.before_scene_id,
             "before_scene_order": config.before_scene_order,
+            "previous_scene_context_path": str(config.previous_scene_context_path)
+            if config.previous_scene_context_path
+            else None,
+            "previous_scene_context_script": str(config.previous_scene_context_script)
+            if config.previous_scene_context_script
+            else None,
+            "previous_scene_context_scene_id": config.previous_scene_context_scene_id,
             "style_reference_path": str(config.style_reference_path) if config.style_reference_path else None,
             "style_reference_script": str(config.style_reference_script) if config.style_reference_script else None,
             "style_reference_scene_id": config.style_reference_scene_id,

@@ -85,51 +85,63 @@ def test_yaml_prompt_loader_renders_writing_intent_prompt_with_author_anchors_bu
         static_values={"intent_policy": "Output only writing_intent."},
     )
 
-    assert "Extract a high-level writing intent" in rendered
+    assert "Extract a realistic author writing intent" in rendered
     assert '"writing_intent": "string"' in rendered
     assert "Keep concrete anchors that an author would naturally know" in rendered
-    assert "Return no fields beyond unit_id and writing_intent" in rendered
+    assert "Return no fields beyond writing_intent" in rendered
+    assert "Do not add unit_id" in rendered
     assert "Do not include retrieval instructions" in rendered
     assert "Output only writing_intent" in rendered
     assert "scene_0006" in rendered
 
 
-def test_yaml_prompt_loader_renders_sparse_writing_intent_prompt_for_social_simulation() -> None:
+def test_yaml_prompt_loader_renders_writing_spec_prompt_for_evaluation() -> None:
     loader = YAMLPromptLoader("task_specs/prompts")
     rendered = loader.render(
-        "dms/writing_intent_sparse",
+        "dms/writing_spec",
         task_values={"unit_json": {"unit_id": "scene_0006", "content": "返程场景。"}},
-        static_values={"intent_policy": "Keep only sparse author-facing setup."},
+        static_values={"intent_policy": "Keep compact evaluation requirements."},
     )
 
-    assert "Extract a sparse exploratory author seed" in rendered
-    assert "character or social simulation" in rendered
-    assert '"writing_intent": "string"' in rendered
-    assert "minimal anchors" in rendered
-    assert "under-specified" in rendered
+    assert "Extract a concise writing specification" in rendered
+    assert "benchmark ground truth for evaluation only" in rendered
+    assert '"writing_spec"' in rendered
+    assert '"required_narrative_units": ["string"]' in rendered
+    assert "must never exceed the source passage length" in rendered
+    assert "captures the core scene function" in rendered
+    assert "Do not require broad geography, destination organizations, route labels" in rendered
+    assert "prefer \"dangerous or unstable flying\" over an exact bridge" in rendered
+    assert "preserve the behavior function and character pressure before the physical mechanics" in rendered
+    assert "Do not add unit_id" in rendered
+
+
+def test_yaml_prompt_loader_accepts_reference_scene_spec_alias() -> None:
+    loader = YAMLPromptLoader("task_specs/prompts")
+    rendered = loader.render(
+        "dms/reference_scene_spec",
+        task_values={"unit_json": {"unit_id": "scene_0006", "content": "返程场景。"}},
+        static_values={"intent_policy": "Keep compact evaluation requirements."},
+    )
+
+    assert '"writing_spec"' in rendered
     assert "Do not include exact dialogue" in rendered
-    assert "retrieval_needs" in rendered
-    assert "Keep only sparse author-facing setup" in rendered
+    assert "Keep compact evaluation requirements" in rendered
     assert "scene_0006" in rendered
 
 
-def test_yaml_prompt_loader_renders_detailed_writing_intent_prompt_for_retrieval_and_eval() -> None:
+def test_yaml_prompt_loader_renders_social_simulation_intent_prompt() -> None:
     loader = YAMLPromptLoader("task_specs/prompts")
     rendered = loader.render(
-        "dms/writing_intent_detailed",
+        "dms/social_simulation_intent",
         task_values={"unit_json": {"unit_id": "scene_0006", "content": "返程场景。"}},
-        static_values={"intent_policy": "Keep detailed author-facing anchors."},
+        static_values={"intent_policy": "Keep only low-information setup."},
     )
 
-    assert "Extract a detailed writing intent" in rendered
-    assert "memory" in rendered
-    assert "writing, and intent-consistency evaluation" in rendered
-    assert '"writing_intent": "string"' in rendered
-    assert "relationship dynamic" in rendered
-    assert "Keep concrete anchors that an author would naturally know" in rendered
-    assert "Do not turn the output into a full synopsis" in rendered
-    assert "Return no fields beyond unit_id and writing_intent" in rendered
-    assert "Keep detailed author-facing anchors" in rendered
+    assert '"social_simulation_intent": "string"' in rendered
+    assert "Extract a low-information social simulation intent" in rendered
+    assert "less informative than the normal writing intent" in rendered
+    assert "Return no fields beyond social_simulation_intent" in rendered
+    assert "Keep only low-information setup" in rendered
     assert "scene_0006" in rendered
 
 
@@ -140,6 +152,7 @@ def test_yaml_prompt_loader_renders_generic_writing_generation_prompt() -> None:
         task_values={
             "writing_request": "写一段返航途中人物互动。",
             "memory_packet": "# Memory Packet\n\n## Entities\n...",
+            "previous_scene_context": "Previous scene: scene_0005\nFull text:\n上一场景内容。",
             "style_reference": "张鹏：慢点慢点。",
             "length_requirement": "正文必须为127-182个中文字符。",
             "output_requirements": "- 中文输出\n- 必须包含UEG",
@@ -149,9 +162,14 @@ def test_yaml_prompt_loader_renders_generic_writing_generation_prompt() -> None:
     assert "Write the next narrative passage according to the writing request." in rendered
     assert "写一段返航途中人物互动。" in rendered
     assert rendered.count("# Memory Packet") == 1
+    assert "# Previous Scene Context" in rendered
+    assert "上一场景内容。" in rendered
     assert "张鹏：慢点慢点。" in rendered
     assert "# Length Requirement" in rendered
     assert "正文必须为127-182个中文字符。" in rendered
+    assert "Treat previous scene context as an auxiliary continuity reference only" in rendered
+    assert "never let it replace, weaken, or omit anchors from the writing request" in rendered
+    assert "Preserve explicit named anchors from the writing request" in rendered
     assert "Use the style reference only for prose format" in rendered
     assert "必须包含UEG" in rendered
     assert "Show 刘培强" not in rendered
@@ -166,7 +184,14 @@ def test_yaml_prompt_loader_renders_social_writing_generation_prompt_separately(
             "writing_request": "写一段返航途中人物互动。",
             "memory_packet": "# Memory Packet\n\n## Entities\n...",
             "attribute_cards": "# Entity Attribute Cards\n\n## 刘培强",
-            "social_simulation": "# Social Simulation\n\n## Coordinated Beats",
+            "social_simulation": (
+                "# Social Simulation Writer Packet\n\n"
+                "## Optional Interaction Functions\n"
+                "- b_001: value_resistance; participants: 刘培强, 张鹏\n"
+                "  action: 刘培强 / risky_operation / 压低飞行姿态\n"
+                "  note: posture only; do not copy as final dialogue\n"
+            ),
+            "previous_scene_context": "Previous scene: scene_0005\nSummary:\n上一场景摘要。",
             "style_reference": "张鹏：慢点慢点。",
             "length_requirement": "正文必须为127-182个中文字符。",
             "output_requirements": "- 中文输出\n- 必须包含UEG",
@@ -176,7 +201,18 @@ def test_yaml_prompt_loader_renders_social_writing_generation_prompt_separately(
     assert "Write the next narrative passage according to the writing request." in rendered
     assert "# Attribute Cards" in rendered
     assert "# Social Simulation" in rendered
+    assert "# Previous Scene Context" in rendered
+    assert "上一场景摘要。" in rendered
+    assert "Writing request is the primary creative target" in rendered
+    assert "must never replace, weaken, or omit anchors from the writing request" in rendered
+    assert "Preserve explicit named anchors from the writing request" in rendered
     assert "Social simulation is a writing aid, not a fact source" in rendered
+    assert "Optional Interaction Functions as optional scene functions" in rendered
+    assert "Dialogue Posture as communicative intent and tone only" in rendered
+    assert "Avoid phrases in the social simulation are prohibitions" in rendered
+    assert "Do not copy writer-packet wording, beat ids, action labels" in rendered
+    assert "Never treat posture text as canonical dialogue" in rendered
+    assert "posture only; do not copy as final dialogue" in rendered
     assert "old-soldier voice" in rendered
     assert "do not write Zhang Peng as a legal guardian" in rendered
     assert rendered.count("# Memory Packet") == 1
@@ -217,6 +253,8 @@ def test_yaml_prompt_loader_renders_writing_evaluation_prompts() -> None:
     )
 
     assert "Decompose the writing intent" in requirements
+    assert "treat \"Required ...\" fields as the authoritative checklist" in requirements
+    assert "use \"Scene purpose\" only as context" in requirements
     assert "FactScore-like checklist" in consistency
     assert "Evaluate the writing quality" in quality
     assert "Evaluate memory faithfulness" in faithfulness

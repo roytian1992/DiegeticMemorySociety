@@ -8,6 +8,8 @@ from typing import Any
 
 import yaml
 
+from dms.intent_levels import normalize_prompt_id
+
 _VAR_PATTERN = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
 
 
@@ -95,6 +97,7 @@ class YAMLPromptLoader:
             return self._load_file(direct)
 
         pid = self._strip_prompt_dir_prefix(pid)
+        pid = normalize_prompt_id(pid)
         if pid.endswith((".yaml", ".yml")):
             path = self.prompt_dir / pid
             if not path.is_file():

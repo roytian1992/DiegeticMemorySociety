@@ -1,0 +1,72 @@
+id: writing_spec
+category: dms
+name: Writing Specification
+description: >
+  Extract a concise reference-only writing specification from one target
+  narrative unit for benchmark evaluation. This is not an author writing prompt.
+
+task_variables:
+  - name: unit_json
+    type: string
+    required: true
+    description: JSON object for one target narrative unit.
+
+static_variables:
+  - name: intent_policy
+    type: string
+    required: true
+    description: Project-level writing-spec abstraction rules.
+
+template: |
+  # Task
+  Extract a concise writing specification from the current narrative unit.
+
+  # Purpose
+  This output is benchmark ground truth for evaluation only. It must not read
+  like an author prompt, retrieval query, generation prompt, or scene synopsis.
+  It will be decomposed into requirements to judge whether generated writing
+  satisfies the target scene's important obligations. The goal is to evaluate
+  whether a generated passage captures the core scene function, not whether it
+  recreates every concrete detail in the reference passage.
+
+  # Source
+  Base the output only on the current narrative-unit text. Treat the title,
+  subtitle, and body as source text.
+
+  # Spec Policy
+  {intent_policy}
+
+  # Output Format
+  Return exactly one JSON object using this schema. Include no Markdown or commentary.
+
+  {
+    "writing_spec": {
+      "scene_purpose": "string",
+      "required_entities": ["string"],
+      "required_narrative_units": ["string"],
+      "required_state_or_relationship": ["string"],
+      "style_or_form_constraints": ["string"]
+    }
+  }
+
+  # Field Rules
+  - Write all values in the same language as the source.
+  - The combined natural-language content of writing_spec must be shorter than the source passage and must never exceed the source passage length.
+  - For short sources under 200 non-whitespace characters, compress aggressively: use at most 3 required_entities, preferably 1-2 required_narrative_units, and at most 2 required_state_or_relationship items.
+  - For Chinese short sources, keep each required_narrative_units and required_state_or_relationship item preferably under 16 non-whitespace characters.
+  - Prefer core obligations over exhaustive coverage. Omit broad locations, background atmosphere, or repeated vehicle/location anchors when central characters and immediate situation already identify the scene.
+  - Keep scene_purpose to one short sentence.
+  - required_entities should include only central characters, groups, organizations, locations, objects, concepts, or occasions whose absence would make the scene identity fail.
+  - Do not require broad geography, destination organizations, route labels, vehicles, or location anchors merely because they are named in the source; include them only when they are central to the scene's conflict or action.
+  - required_narrative_units should list only compact target obligations. Prefer 1-3 short items.
+  - Abstract replaceable choreography into broader obligations: for example, prefer "dangerous or unstable flying" over an exact bridge, sea-skimming, altitude, flight path, or route detail.
+  - In short action scenes, preserve the behavior function and character pressure before the physical mechanics. For example, "刘培强危险飞行、张鹏劝稳" is usually a better requirement than "刘培强掠海飞行、经过跨海大桥".
+  - Include exact physical mechanics such as "sea-skimming", "cross-sea bridge", "specific town", or "specific route" only if removing that exact detail would make the scene's core conflict impossible to judge.
+  - required_state_or_relationship should include only important state changes or durable relationship requirements.
+  - style_or_form_constraints should be empty unless the source clearly requires a form, tone, or structural mode.
+  - Do not include exact dialogue, full synopsis, line-by-line action choreography, incidental setting details, evidence spans, hidden evaluator notes, retrieval instructions, query plans, or generation instructions.
+  - Do not add fields beyond the declared schema.
+  - Do not add unit_id; the runner already knows the input narrative unit id.
+
+  # Current Narrative Unit
+  {unit_json}

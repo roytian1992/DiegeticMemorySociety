@@ -2,8 +2,8 @@ id: writing_intent
 category: dms
 name: Writing Intent
 description: >
-  Extract an abstract writing intent from one target narrative unit for
-  high-level-idea retrieval evaluation.
+  Extract a realistic author-facing writing intent from one target narrative
+  unit for retrieval, social simulation, and generation.
 
 task_variables:
   - name: unit_json
@@ -19,10 +19,12 @@ static_variables:
 
 template: |
   # Task
-  Extract a high-level writing intent from the current narrative unit.
+  Extract a realistic author writing intent from the current narrative unit.
 
   # Purpose
-  The output will be used later as the only author-provided input to a memory retrieval test. It should read like a natural author brief for what to write next.
+  The output simulates what an author might actually provide before writing
+  this passage. It will be used as the only author-provided input for memory
+  retrieval, social simulation, and writing generation.
 
   # Source
   Base the output on the current narrative-unit text only. Treat the title, subtitle, and body as source text.
@@ -34,20 +36,20 @@ template: |
   Return exactly one JSON object using this schema. Include no Markdown or commentary.
 
   {
-    "unit_id": "string",
     "writing_intent": "string"
   }
 
   # Field Rules
-  - unit_id must match the input narrative unit.
-  - writing_intent must be one compact paragraph, usually one to three sentences.
+  - writing_intent must be one compact sentence.
   - Write the intent in the same language as the source.
-  - Capture the broad authorial purpose: narrative function, emotional direction, relationship dynamic, atmosphere, transition, pressure, or stakes.
+  - Keep it much shorter than the source text. It must never be longer than the source passage.
+  - For Chinese, prefer no more than 120 non-whitespace characters. For English, prefer no more than 80 words.
+  - Capture only the broad authorial purpose: scene situation, central characters, main location, key object/vehicle/facility, relationship pressure, atmosphere, or transition.
   - Keep concrete anchors that an author would naturally know when proposing the scene, such as central character names, main location, key vehicle/facility, mission target, or immediate setup.
   - Do not over-abstract the intent into anonymous roles if the source clearly centers named characters or objects.
-  - Do not turn the intent into a full synopsis, outline, beat list, or evidence list.
-  - Avoid exact dialogue and overly specific choreography unless a concrete action is necessary to state the scene's writing purpose.
-  - Return no fields beyond unit_id and writing_intent.
+  - Do not include target outcomes, exact dialogue, beat lists, evidence spans, full synopsis, line-by-line actions, or overly specific choreography.
+  - Return no fields beyond writing_intent.
+  - Do not add unit_id; the runner already knows the input narrative unit id.
   - Do not include retrieval instructions such as what to retrieve, query, recall, look up, or rank.
 
   # Current Narrative Unit

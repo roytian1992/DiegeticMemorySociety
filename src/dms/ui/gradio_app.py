@@ -20,6 +20,20 @@ DEFAULT_COLLECTION = "dms_retrieval_documents_bge_m3"
 DEFAULT_BENCHMARK_DIR = Path("runs/benchmark")
 
 
+def _intent_text_candidates(target_dir: Path, intent_name: str) -> tuple[Path, ...]:
+    canonical = target_dir / "intent" / intent_name / f"{intent_name}.txt"
+    legacy = {
+        "social_simulation_intent": (
+            target_dir / "intents" / "sparse" / "writing_intent.txt",
+        ),
+        "writing_spec": (
+            target_dir / "intent" / "reference_scene_spec" / "reference_scene_spec.txt",
+            target_dir / "intents" / "detailed" / "writing_intent.txt",
+        ),
+    }
+    return (canonical, *legacy.get(intent_name, ()))
+
+
 def build_app(
     *,
     script_path: Path = DEFAULT_SCRIPT,
@@ -51,8 +65,9 @@ def build_app(
                 scene_meta = gr.JSON(label="Scene")
                 score_meta = gr.JSON(label="Scores")
             with gr.Row():
-                sparse_intent = gr.Textbox(label="Sparse Intent", lines=3)
-                detailed_intent = gr.Textbox(label="Detailed Intent", lines=3)
+                social_simulation_intent = gr.Textbox(label="Social Simulation Intent", lines=3)
+                writing_intent = gr.Textbox(label="Writing Intent", lines=3)
+                writing_spec = gr.Textbox(label="Writing Spec", lines=6)
             with gr.Row():
                 draft = gr.Textbox(label="Generated Draft", lines=8)
                 reference = gr.Textbox(label="Reference Scene", lines=8)
@@ -66,8 +81,9 @@ def build_app(
                 outputs=[
                     scene_meta,
                     score_meta,
-                    sparse_intent,
-                    detailed_intent,
+                    social_simulation_intent,
+                    writing_intent,
+                    writing_spec,
                     draft,
                     reference,
                     memory_packet,
@@ -77,7 +93,7 @@ def build_app(
             )
 
         with gr.Tab("Run One Scene"):
-            gr.Markdown("Runs sparse/detailed intent extraction, retrieval, attribute cards, social simulation, writing, and detailed-intent evaluation for one scene.")
+            gr.Markdown("Runs social simulation intent extraction, writing intent extraction, writing spec extraction, retrieval, attribute cards, social simulation, writing, and writing-spec evaluation for one scene.")
             with gr.Row():
                 run_scene = gr.Dropdown(choices=scene_choices, value=scene_choices[5] if len(scene_choices) > 5 else (scene_choices[0] if scene_choices else None), label="Target Scene")
                 run_output = gr.Textbox(value=str(benchmark_dir / "ui_single_scene"), label="Output directory")
@@ -132,7 +148,7 @@ def _inspect_scene(
     scene_choice: str | None,
     benchmark_dir: str,
     script_path: str,
-) -> tuple[dict[str, Any], dict[str, Any], str, str, str, str, str, str, str]:
+) -> tuple[dict[str, Any], dict[str, Any], str, str, str, str, str, str, str, str]:
     scene_id = _scene_id(scene_choice)
     target_dir = Path(benchmark_dir) / "targets" / scene_id
     scene = _load_scene(Path(script_path), scene_id)
@@ -140,13 +156,17 @@ def _inspect_scene(
     return (
         scene.to_dict() if scene else {"scene_id": scene_id, "error": "scene not found"},
         summary.get("metrics", {}),
-        _read_text(target_dir / "intents" / "sparse" / "writing_intent.txt"),
-        _read_text(target_dir / "intents" / "detailed" / "writing_intent.txt"),
+        _read_first_text(*_intent_text_candidates(target_dir, "social_simulation_intent")),
+        _read_first_text(*_intent_text_candidates(target_dir, "writing_intent")),
+        _read_first_text(*_intent_text_candidates(target_dir, "writing_spec")),
         _read_text(target_dir / "writing" / "draft.md"),
         scene.content if scene else "",
         _read_text(target_dir / "memory_packet.md"),
         _read_text(target_dir / "attribute_cards" / "attribute_cards.md"),
-        _read_text(target_dir / "social_simulation" / "social_simulation.md"),
+        _read_first_text(
+            target_dir / "social_simulation" / "writer_packet.md",
+            target_dir / "social_simulation" / "social_simulation.md",
+        ),
     )
 
 
@@ -177,7 +197,10 @@ def _run_one_scene(
     return (
         summary,
         _read_text(target_dir / "writing" / "draft.md"),
-        _read_text(target_dir / "social_simulation" / "social_simulation.md"),
+        _read_first_text(
+            target_dir / "social_simulation" / "writer_packet.md",
+            target_dir / "social_simulation" / "social_simulation.md",
+        ),
     )
 
 
@@ -237,6 +260,14 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8").strip() if path.is_file() else ""
+
+
+def _read_first_text(*paths: Path) -> str:
+    for path in paths:
+        text = _read_text(path)
+        if text:
+            return text
+    return ""
 
 
 def main(argv: list[str] | None = None) -> int:

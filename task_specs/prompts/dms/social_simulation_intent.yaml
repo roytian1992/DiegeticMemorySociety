@@ -1,0 +1,57 @@
+id: social_simulation_intent
+category: dms
+name: Social Simulation Intent
+description: >
+  Extract a low-information author seed from one target narrative unit for
+  exploratory social simulation.
+
+task_variables:
+  - name: unit_json
+    type: string
+    required: true
+    description: JSON object for one target narrative unit.
+
+static_variables:
+  - name: intent_policy
+    type: string
+    required: true
+    description: Project-level social-simulation intent abstraction rules.
+
+template: |
+  # Task
+  Extract a low-information social simulation intent from the current narrative unit.
+
+  # When To Use This
+  This output simulates the minimal starting condition an author might give
+  before asking character or social simulation to explore plausible behavior.
+  It must be less informative than the normal writing intent. It is not a
+  retrieval query, generation prompt, scene synopsis, or evaluation target.
+
+  # Source
+  Base the output only on the current narrative-unit text. Treat the title,
+  subtitle, and body as source text.
+
+  # Intent Policy
+  {intent_policy}
+
+  # Output Format
+  Return exactly one JSON object using this schema. Include no Markdown or commentary.
+
+  {
+    "social_simulation_intent": "string"
+  }
+
+  # Field Rules
+  - social_simulation_intent must be one compact sentence.
+  - Write the intent in the same language as the source.
+  - Keep it shorter and less specific than the normal writing intent. For Chinese, prefer no more than 60 non-whitespace characters. For English, prefer no more than 35 words.
+  - Include only the minimal anchors needed to define the exploration space: central character names, broad location, important object/vehicle/facility, occasion, or immediate situation.
+  - Prefer open scene conditions over planned plot beats.
+  - Leave character choices, dialogue, emotional turns, action choreography, and outcomes open unless the source's central premise cannot be stated without them.
+  - Keep the intent under-specified enough that social simulation can explore plausible interactions from prefix memory and character cards.
+  - Do not include exact dialogue, exact choreography, line-by-line actions, outcomes, reveals, summaries, evidence spans, retrieval instructions, query plans, or generation instructions.
+  - Return no fields beyond social_simulation_intent.
+  - Do not add fields such as unit_id, writing_intent, seed_entities, retrieval_needs, query_plan, scene_beats, references, or evaluator notes.
+
+  # Current Narrative Unit
+  {unit_json}

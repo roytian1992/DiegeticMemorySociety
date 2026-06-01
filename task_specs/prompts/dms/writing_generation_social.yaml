@@ -21,7 +21,11 @@ task_variables:
   - name: social_simulation
     type: string
     required: true
-    description: Character interaction simulation and scene-dynamics plan.
+    description: Writer-facing social simulation packet or interaction plan.
+  - name: previous_scene_context
+    type: string
+    required: false
+    description: Optional immediate previous scene context for local continuity.
   - name: style_reference
     type: string
     required: false
@@ -42,17 +46,24 @@ template: |
   Write the next narrative passage according to the writing request.
 
   # Input Roles
-  You are given five inputs with different authority:
+  You are given six inputs with different authority:
   1. Writing request: the creative target for the new passage.
   2. Memory packet: prior story context and factual continuity boundary.
   3. Attribute cards: evidence-bound character/entity states, traits, relationships, constraints, and risks.
-  4. Social simulation: a flexible interaction plan for how characters may pressure, avoid, respond, or shift during this scene.
-  5. Style reference: nearby prose format and rhythm only.
+  4. Social simulation: usually a writer packet with optional interaction functions, action guidance, dialogue posture, and avoid rules.
+  5. Previous scene context: immediate local continuity from the passage just before the new one.
+  6. Style reference: nearby prose format and rhythm only.
 
   # Authority Order
+  - Writing request is the primary creative target; its required anchors and conditions must remain active.
   - Memory packet and attribute-card hard constraints define the factual boundary.
   - Attribute-card risks define what must not be over-inferred.
+  - Previous scene context is an auxiliary continuity reference only. It can guide immediate transition, physical setup, and local emotional continuity, but must never replace, weaken, or omit anchors from the writing request.
   - Social simulation is a writing aid, not a fact source. Use it to shape interaction, pacing, and tension.
+  - If the social simulation is a writer packet, treat Optional Interaction Functions as optional scene functions, Action Guidance as behavior hints, Dialogue Posture as communicative intent and tone only, and Use Rules / Warnings / avoid phrases as constraints.
+  - Do not treat social_simulation_intent, selected sequence scores, beat ids, action_type labels, verification metrics, rejected sequences, source-isolation notes, or warning labels as prose content.
+  - Avoid phrases in the social simulation are prohibitions, not inspiration.
+  - The social simulation never replaces the writing request. Required anchors from the writing request must still be satisfied even when the social simulation is sparse.
   - Writing-request scene conditions are allowed as new-scene conditions, but do not cite or present them as prior memory.
   - Style reference controls surface form only; it does not add story facts.
 
@@ -67,6 +78,9 @@ template: |
   # Social Simulation
   {social_simulation}
 
+  # Previous Scene Context
+  {previous_scene_context}
+
   # Style Reference
   {style_reference}
 
@@ -80,10 +94,16 @@ template: |
   - Write final narrative prose only.
   - Do not include headings, analysis, bullet points, notes, citations, memory indexes, or reference ids.
   - Do not copy the social simulation beats verbatim; transform them into natural scene writing.
+  - Do not copy writer-packet wording, beat ids, action labels, score labels, verification labels, "posture only", or "not_final_dialogue" into the draft.
+  - Use only the interaction functions that improve the passage. You may ignore, merge, compress, or reorder optional social-simulation beats.
+  - Convert action guidance into concrete in-scene action and pressure, not explanation of character psychology.
+  - Convert dialogue posture into fresh dialogue or silence. Never treat posture text as canonical dialogue.
+  - Do not copy previous scene context verbatim; use it only for continuity into the new passage.
   - You may merge, compress, omit, or reorder social-simulation beats if that produces a stronger passage while still satisfying the writing request.
   - Do not repeat salient past actions as new actions unless the writing request explicitly asks for repetition. Past actions may only trigger memory, emotion, imagery, or dialogue.
   - Do not upgrade tone requests into biography. For example, "old-soldier voice" means dialogue texture, not proof that the character is a soldier or veteran.
   - Keep names, entity continuity, relationships, and known states consistent with the memory packet and attribute cards.
+  - Preserve explicit named anchors from the writing request. Named characters, named places, organizations, and object/model identifiers such as acronyms or alphanumeric vehicle names should appear at least once, using the exact form or a clearly equivalent alias supported by the memory packet.
   - Preserve unsupported-role boundaries: do not write Zhang Peng as a legal guardian, blood relative, military officer, pilot, or formal instructor unless the request explicitly changes canon.
   - Do not introduce major new named entities, technologies, organizations, locations, or lore unless the writing request explicitly asks for them.
   - Do not copy evidence text, scene-summary text, attribute-card text, or social-simulation text verbatim.

@@ -13,6 +13,7 @@ from dms.benchmark import (
 )
 from dms.config import build_openai_client_from_config, embedding_kwargs_from_config, load_local_config
 from dms.evaluation import WritingEvaluationConfig, build_scene_eligibility_splits, evaluate_writing
+from dms.intent_levels import CLI_INTENT_LEVEL_CHOICES
 from dms.writing import SocialWritingGenerationConfig, generate_writing_with_social_simulation
 from dms.llm import (
     AnthropicMessagesClient,
@@ -91,6 +92,26 @@ def _read_writing_intent(args: argparse.Namespace) -> str:
         if payload.get("writing_intent"):
             return str(payload["writing_intent"])
     return text.strip()
+
+
+def _read_social_simulation_intent(args: argparse.Namespace) -> str:
+    if getattr(args, "social_simulation_intent", None):
+        return str(args.social_simulation_intent)
+    path = getattr(args, "social_simulation_intent_file", None)
+    if path:
+        text = Path(path).read_text(encoding="utf-8")
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            return text.strip()
+        if isinstance(payload, dict):
+            data = payload.get("data")
+            if isinstance(data, dict) and data.get("social_simulation_intent"):
+                return str(data["social_simulation_intent"])
+            if payload.get("social_simulation_intent"):
+                return str(payload["social_simulation_intent"])
+        return text.strip()
+    return _read_writing_intent(args)
 
 
 def _read_text_arg(value: str | None, path: Path | None, *, label: str) -> str:
@@ -569,9 +590,11 @@ def main(argv: list[str] | None = None) -> int:
 
     social_simulation = subparsers.add_parser(
         "run-social-simulation",
-        help="Run attribute-card-conditioned character social simulation for a writing intent.",
+        help="Run attribute-card-conditioned character social simulation from a low-information social simulation intent.",
     )
     social_simulation.add_argument("attribute_cards_path", type=Path)
+    social_simulation.add_argument("--social-simulation-intent", default=None)
+    social_simulation.add_argument("--social-simulation-intent-file", type=Path, default=None)
     social_simulation.add_argument("--writing-intent", default=None)
     social_simulation.add_argument("--writing-intent-file", type=Path, default=None)
     social_simulation.add_argument("--output-dir", type=Path, required=True)
@@ -599,6 +622,11 @@ def main(argv: list[str] | None = None) -> int:
     social_writing.add_argument("--model-config", type=Path, default=Path("configs/local_config.yaml"))
     social_writing.add_argument("--model-section", default="writing_llm")
     social_writing.add_argument("--prompt-dir", type=Path, default=Path("task_specs/prompts"))
+    social_writing.add_argument("--previous-scene-context", default="")
+    social_writing.add_argument("--previous-scene-context-file", type=Path, default=None)
+    social_writing.add_argument("--previous-scene-context-script", type=Path, default=None)
+    social_writing.add_argument("--previous-scene-context-scene-id", default=None)
+    social_writing.add_argument("--previous-scene-context-max-chars", type=int, default=800)
     social_writing.add_argument("--style-reference-file", type=Path, default=None)
     social_writing.add_argument("--style-reference-script", type=Path, default=None)
     social_writing.add_argument("--style-reference-scene-id", default=None)
@@ -630,6 +658,11 @@ def main(argv: list[str] | None = None) -> int:
     writing_e2e.add_argument("--attribute-entity-type", action="append", dest="attribute_entity_types", default=None)
     writing_e2e.add_argument("--attribute-entity", action="append", dest="attribute_entity_names", default=None)
     writing_e2e.add_argument("--max-memories-per-entity", type=int, default=16)
+    writing_e2e.add_argument("--previous-scene-context", default="")
+    writing_e2e.add_argument("--previous-scene-context-file", type=Path, default=None)
+    writing_e2e.add_argument("--previous-scene-context-script", type=Path, default=None)
+    writing_e2e.add_argument("--previous-scene-context-scene-id", default=None)
+    writing_e2e.add_argument("--previous-scene-context-max-chars", type=int, default=800)
     writing_e2e.add_argument("--style-reference-file", type=Path, default=None)
     writing_e2e.add_argument("--style-reference-script", type=Path, default=None)
     writing_e2e.add_argument("--style-reference-scene-id", default=None)
@@ -668,7 +701,7 @@ def main(argv: list[str] | None = None) -> int:
 
     benchmark_run = subparsers.add_parser(
         "run-writing-benchmark",
-        help="Run sparse/detailed intent extraction, retrieval, social simulation, writing, and detailed-intent evaluation for eligible scenes.",
+        help="Run social simulation intent extraction, writing intent extraction, writing spec extraction, retrieval, social simulation, writing, and evaluation for eligible scenes.",
     )
     benchmark_run.add_argument("script_path", type=Path)
     benchmark_run.add_argument("--db-path", type=Path, required=True)
@@ -690,9 +723,15 @@ def main(argv: list[str] | None = None) -> int:
     benchmark_run.add_argument("--overwrite", action="store_true")
     benchmark_run.add_argument("--stop-on-error", action="store_true")
     benchmark_run.add_argument("--collection-name", default="dms_retrieval_documents")
-    benchmark_run.add_argument("--memory-intent-level", choices=["sparse", "detailed"], default="sparse")
-    benchmark_run.add_argument("--generation-intent-level", choices=["sparse", "detailed"], default="sparse")
-    benchmark_run.add_argument("--evaluation-intent-level", choices=["sparse", "detailed"], default="detailed")
+    intent_level_choices = list(CLI_INTENT_LEVEL_CHOICES)
+    benchmark_run.add_argument("--memory-intent-level", choices=intent_level_choices, default="writing_intent")
+    benchmark_run.add_argument(
+        "--social-simulation-intent-level",
+        choices=intent_level_choices,
+        default="social_simulation_intent",
+    )
+    benchmark_run.add_argument("--generation-intent-level", choices=intent_level_choices, default="writing_intent")
+    benchmark_run.add_argument("--evaluation-intent-level", choices=intent_level_choices, default="writing_spec")
     benchmark_run.add_argument("--scene-top-k", type=int, default=5)
     benchmark_run.add_argument("--entity-memory-top-k", type=int, default=12)
     benchmark_run.add_argument("--max-entity-memories-before-vector", type=int, default=50)
@@ -700,7 +739,9 @@ def main(argv: list[str] | None = None) -> int:
     benchmark_run.add_argument("--attribute-entity-type", action="append", dest="attribute_entity_types", default=None)
     benchmark_run.add_argument("--attribute-entity", action="append", dest="attribute_entity_names", default=None)
     benchmark_run.add_argument("--max-memories-per-entity", type=int, default=16)
-    benchmark_run.add_argument("--style-reference-mode", choices=["previous_scene", "none"], default="previous_scene")
+    benchmark_run.add_argument("--previous-scene-context-mode", choices=["previous_scene", "none"], default="previous_scene")
+    benchmark_run.add_argument("--previous-scene-context-max-chars", type=int, default=800)
+    benchmark_run.add_argument("--style-reference-mode", choices=["previous_scene", "none"], default="none")
     benchmark_run.add_argument("--length-margin", type=float, default=0.2)
     benchmark_run.add_argument("--length-requirement", default="")
     benchmark_run.add_argument("--output-requirements", default=None)
@@ -1148,7 +1189,7 @@ def main(argv: list[str] | None = None) -> int:
         summary = run_social_simulation(
             SocialSimulationConfig(
                 attribute_cards_path=args.attribute_cards_path,
-                writing_intent=_read_writing_intent(args),
+                social_simulation_intent=_read_social_simulation_intent(args),
                 output_dir=args.output_dir,
                 prompt_dir=args.prompt_dir,
                 overwrite=args.overwrite,
@@ -1169,6 +1210,11 @@ def main(argv: list[str] | None = None) -> int:
                 model_config_path=args.model_config,
                 model_section=args.model_section,
                 prompt_dir=args.prompt_dir,
+                previous_scene_context=args.previous_scene_context,
+                previous_scene_context_path=args.previous_scene_context_file,
+                previous_scene_context_script=args.previous_scene_context_script,
+                previous_scene_context_scene_id=args.previous_scene_context_scene_id,
+                previous_scene_context_max_chars=args.previous_scene_context_max_chars,
                 style_reference_path=args.style_reference_file,
                 style_reference_script=args.style_reference_script,
                 style_reference_scene_id=args.style_reference_scene_id,
@@ -1202,6 +1248,11 @@ def main(argv: list[str] | None = None) -> int:
                 attribute_entity_types=tuple(args.attribute_entity_types or ["character"]),
                 attribute_entity_names=tuple(args.attribute_entity_names or []),
                 max_memories_per_entity=args.max_memories_per_entity,
+                previous_scene_context=args.previous_scene_context,
+                previous_scene_context_path=args.previous_scene_context_file,
+                previous_scene_context_script=args.previous_scene_context_script,
+                previous_scene_context_scene_id=args.previous_scene_context_scene_id,
+                previous_scene_context_max_chars=args.previous_scene_context_max_chars,
                 style_reference_path=args.style_reference_file,
                 style_reference_script=args.style_reference_script,
                 style_reference_scene_id=args.style_reference_scene_id,
@@ -1268,6 +1319,7 @@ def main(argv: list[str] | None = None) -> int:
                 intent_only=args.intent_only,
                 collection_name=args.collection_name,
                 memory_intent_level=args.memory_intent_level,
+                social_simulation_intent_level=args.social_simulation_intent_level,
                 generation_intent_level=args.generation_intent_level,
                 evaluation_intent_level=args.evaluation_intent_level,
                 scene_top_k=args.scene_top_k,
@@ -1277,6 +1329,8 @@ def main(argv: list[str] | None = None) -> int:
                 attribute_entity_types=tuple(args.attribute_entity_types or ["character"]),
                 attribute_entity_names=tuple(args.attribute_entity_names or []),
                 max_memories_per_entity=args.max_memories_per_entity,
+                previous_scene_context_mode=args.previous_scene_context_mode,
+                previous_scene_context_max_chars=args.previous_scene_context_max_chars,
                 style_reference_mode=args.style_reference_mode,
                 length_margin=args.length_margin,
                 length_requirement=args.length_requirement,

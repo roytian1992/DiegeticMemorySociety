@@ -1,0 +1,15 @@
+{
+  "task": "social_simulation_intent",
+  "prompt_id": "dms/social_simulation_intent",
+  "task_name": "社会模拟低信息量意图抽取",
+  "intent_policy": [
+    "This task is for exploratory social simulation before the author has a detailed writing plan.",
+    "Output only the low-information social_simulation_intent.",
+    "Keep the output schema minimal; do not add writing_intent, seed entities, retrieval needs, query plans, simulation plans, scene beats, or answer hints as separate fields.",
+    "Keep only anchors needed to define the exploration space, such as central characters, broad location, occasion, important object or vehicle, or immediate situation.",
+    "Prefer an open-ended setup over a target outcome.",
+    "Make this artifact less informative than the normal writing_intent.",
+    "Avoid full synopsis, exact dialogue, exact action choreography, required endings, detailed emotional turns, evidence spans, retrieval instructions, and generation instructions.",
+    "The output must be parseable JSON."
+  ]
+}

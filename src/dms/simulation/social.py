@@ -9,15 +9,30 @@ from typing import Any
 from dms.llm import LLMClient, LLMResult
 from dms.parsing import extract_json_value
 from dms.prompts import YAMLPromptLoader
+from dms.simulation.algorithmic import build_algorithmic_social_plan
+from dms.simulation.formatting import format_social_simulation_markdown, format_social_simulation_writer_packet
+from dms.simulation.verification import verify_social_simulation, verify_writer_packet
+
+_FORBIDDEN_SOURCE_CONTEXT_KEYS = {
+    "content",
+    "unit_json",
+    "target_scene",
+    "target_scene_text",
+    "target_text",
+    "reference_text",
+    "writing_spec",
+    "reference_scene_spec",
+}
 
 
 @dataclass(frozen=True)
 class SocialSimulationConfig:
     attribute_cards_path: Path
-    writing_intent: str
     output_dir: Path
+    social_simulation_intent: str = ""
     prompt_dir: Path = Path("task_specs/prompts")
     overwrite: bool = False
+    writing_intent: str = ""
 
 
 def run_social_simulation(config: SocialSimulationConfig, llm_client: LLMClient) -> dict[str, Any]:
@@ -30,6 +45,7 @@ def run_social_simulation(config: SocialSimulationConfig, llm_client: LLMClient)
 
     cards_payload = json.loads(Path(config.attribute_cards_path).read_text(encoding="utf-8"))
     cards = _extract_cards(cards_payload)
+    social_simulation_intent = _resolve_social_simulation_intent(config)
     loader = YAMLPromptLoader(config.prompt_dir)
     calls: list[dict[str, Any]] = []
     character_simulations: list[dict[str, Any]] = []
@@ -38,8 +54,9 @@ def run_social_simulation(config: SocialSimulationConfig, llm_client: LLMClient)
         context = _build_character_simulation_context(
             card,
             cards=cards,
-            writing_intent=config.writing_intent,
+            social_simulation_intent=social_simulation_intent,
         )
+        _assert_no_forbidden_source_context(context, path=f"character:{card.get('canonical_name') or card.get('entity_id')}")
         call_id = f"character_{_safe_id(card.get('entity_id') or card.get('canonical_name'))}"
         (output_dir / "inputs" / f"{call_id}.json").write_text(
             json.dumps(context, ensure_ascii=False, indent=2) + "\n",
@@ -57,11 +74,12 @@ def run_social_simulation(config: SocialSimulationConfig, llm_client: LLMClient)
         character_simulations.append(_normalize_character_simulation(parsed, card))
 
     coordinator_context = {
-        "writing_intent": config.writing_intent,
+        "social_simulation_intent": social_simulation_intent,
         "prefix_boundary": _prefix_boundary(cards),
         "attribute_cards": cards,
         "character_simulations": character_simulations,
     }
+    _assert_no_forbidden_source_context(coordinator_context, path="coordinator")
     (output_dir / "inputs" / "coordinator.json").write_text(
         json.dumps(coordinator_context, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -76,6 +94,20 @@ def run_social_simulation(config: SocialSimulationConfig, llm_client: LLMClient)
         task_values={"coordinator_context_json": coordinator_context},
     )
     social_simulation = _normalize_coordinator_payload(coordinator_payload, coordinator_context)
+    verification = verify_social_simulation(
+        cards=cards,
+        character_simulations=character_simulations,
+        social_simulation=social_simulation,
+        writing_intent=social_simulation_intent,
+    )
+    algorithmic_plan = build_algorithmic_social_plan(
+        cards=cards,
+        character_simulations=character_simulations,
+        social_simulation=social_simulation,
+        writing_intent=social_simulation_intent,
+        verification=verification,
+    )
+    writer_packet_verification = verify_writer_packet(algorithmic_plan.get("writer_packet") or {})
 
     summary = {
         "created_at": datetime.now().isoformat(timespec="seconds"),
@@ -85,17 +117,30 @@ def run_social_simulation(config: SocialSimulationConfig, llm_client: LLMClient)
         },
         "inputs": {
             "attribute_cards_path": str(config.attribute_cards_path),
-            "writing_intent": config.writing_intent,
+            "social_simulation_intent": social_simulation_intent,
             "card_count": len(cards),
+            "source_isolation": {
+                "target_scene_text_visible": False,
+                "writing_spec_visible": False,
+                "allowed_new_scene_source": "social_simulation_intent",
+            },
         },
         "character_simulation_count": len(character_simulations),
         "character_simulations": character_simulations,
         "social_simulation": social_simulation,
+        "algorithmic_social_plan": algorithmic_plan,
+        "verification": verification,
+        "writer_packet_verification": writer_packet_verification,
+        "social_simulation_metrics": algorithmic_plan.get("metrics", {}),
         "artifacts": {
             "summary": str(output_dir / "summary.json"),
             "character_simulations_json": str(output_dir / "character_simulations.json"),
             "social_simulation_json": str(output_dir / "social_simulation.json"),
+            "algorithmic_social_plan_json": str(output_dir / "algorithmic_social_plan.json"),
+            "verification_json": str(output_dir / "verification.json"),
+            "writer_packet_verification_json": str(output_dir / "writer_packet_verification.json"),
             "social_simulation_markdown": str(output_dir / "social_simulation.md"),
+            "writer_packet_markdown": str(output_dir / "writer_packet.md"),
             "calls": str(output_dir / "calls.jsonl"),
             "inputs_dir": str(output_dir / "inputs"),
             "prompts_dir": str(output_dir / "prompts"),
@@ -111,60 +156,46 @@ def run_social_simulation(config: SocialSimulationConfig, llm_client: LLMClient)
         json.dumps(social_simulation, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    (output_dir / "algorithmic_social_plan.json").write_text(
+        json.dumps(algorithmic_plan, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (output_dir / "verification.json").write_text(
+        json.dumps(verification, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (output_dir / "writer_packet_verification.json").write_text(
+        json.dumps(writer_packet_verification, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     (output_dir / "social_simulation.md").write_text(format_social_simulation_markdown(summary), encoding="utf-8")
+    (output_dir / "writer_packet.md").write_text(format_social_simulation_writer_packet(summary), encoding="utf-8")
     (output_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     _write_jsonl(output_dir / "calls.jsonl", calls)
     return summary
 
 
-def format_social_simulation_markdown(summary: dict[str, Any]) -> str:
-    lines = ["# Social Simulation", ""]
-    inputs = summary.get("inputs") or {}
-    if inputs.get("attribute_cards_path"):
-        lines.append(f"- source: {inputs.get('attribute_cards_path')}")
-    if inputs.get("writing_intent"):
-        lines.append(f"- writing intent: {inputs.get('writing_intent')}")
-    lines.append(f"- character simulations: {summary.get('character_simulation_count', 0)}")
+def _resolve_social_simulation_intent(config: SocialSimulationConfig) -> str:
+    intent = str(config.social_simulation_intent or "").strip()
+    legacy = str(config.writing_intent or "").strip()
+    if intent:
+        return intent
+    if legacy:
+        return legacy
+    raise ValueError("social_simulation_intent is required")
 
-    character_simulations = summary.get("character_simulations") or []
-    if character_simulations:
-        lines.append("")
-        lines.append("## Character Simulations")
-        for simulation in character_simulations:
-            lines.append("")
-            lines.append(f"### {simulation.get('character')}")
-            _append_simple_list(lines, "intent assumptions", simulation.get("intent_assumptions"))
-            _append_items(lines, "internal state", simulation.get("likely_internal_state"), "value")
-            _append_items(lines, "actions", simulation.get("likely_actions"), "value")
-            _append_items(lines, "dialogue", simulation.get("likely_dialogue"), "value")
-            _append_interaction_pressure(lines, simulation.get("interaction_pressure"))
-            _append_risks(lines, "avoid / risks", simulation.get("avoid_or_risks"))
 
-    social = summary.get("social_simulation") or {}
-    if social:
-        lines.append("")
-        lines.append("## Coordinated Beats")
-        for index, beat in enumerate(social.get("scene_beats") or [], start=1):
-            if not isinstance(beat, dict):
-                lines.append(f"{index}. {beat}")
-                continue
-            participants = ", ".join(str(item) for item in beat.get("participants") or [])
-            basis = _format_refs(beat.get("memory_basis") or [])
-            suffix = f" [{basis}]" if basis else ""
-            lines.append(f"{index}. {beat.get('beat') or ''}{suffix}")
-            if participants:
-                lines.append(f"   participants: {participants}")
-            if beat.get("purpose"):
-                lines.append(f"   purpose: {beat.get('purpose')}")
-            intent_basis = beat.get("intent_basis") or []
-            if intent_basis:
-                lines.append(f"   intent basis: {'; '.join(str(item) for item in intent_basis)}")
-
-        _append_dynamics(lines, social.get("character_dynamics"))
-        _append_risks(lines, "memory risks", social.get("memory_risks"))
-        _append_guidance(lines, social.get("writer_guidance"))
-
-    return "\n".join(lines).rstrip() + "\n"
+def _assert_no_forbidden_source_context(value: Any, *, path: str = "$") -> None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            key_text = str(key)
+            child_path = f"{path}.{key_text}"
+            if key_text in _FORBIDDEN_SOURCE_CONTEXT_KEYS:
+                raise ValueError(f"Forbidden target-scene source field in social simulation context: {child_path}")
+            _assert_no_forbidden_source_context(child, path=child_path)
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            _assert_no_forbidden_source_context(child, path=f"{path}[{index}]")
 
 
 def _extract_cards(payload: Any) -> list[dict[str, Any]]:
@@ -181,7 +212,7 @@ def _build_character_simulation_context(
     card: dict[str, Any],
     *,
     cards: list[dict[str, Any]],
-    writing_intent: str,
+    social_simulation_intent: str,
 ) -> dict[str, Any]:
     target_name = str(card.get("canonical_name") or "")
     other_cards = [
@@ -190,12 +221,15 @@ def _build_character_simulation_context(
         if peer is not card and peer.get("canonical_name") != target_name
     ]
     return {
-        "writing_intent": writing_intent,
+        "social_simulation_intent": social_simulation_intent,
         "target_card": card,
         "other_visible_cards": other_cards,
         "instructions": {
             "output_language": "Chinese",
             "allowed_refs": sorted(_collect_card_refs(card)),
+            "target_scene_text_visible": False,
+            "writing_spec_visible": False,
+            "use_only_intent_and_prefix_cards": True,
         },
     }
 
@@ -315,94 +349,6 @@ def _safe_id(value: Any) -> str:
     raw = str(value or "item")
     safe = "".join(char if char.isalnum() or char in ("-", "_") else "_" for char in raw)
     return safe or "item"
-
-
-def _append_items(lines: list[str], label: str, items: Any, value_key: str) -> None:
-    if not items:
-        return
-    lines.append(f"{label}:")
-    for item in items:
-        if not isinstance(item, dict):
-            lines.append(f"- {item}")
-            continue
-        value = item.get(value_key) or item.get("value") or ""
-        refs = _format_refs(item.get("refs") or [])
-        status = item.get("status")
-        meta = f" ({status}; {refs})" if status or refs else ""
-        lines.append(f"- {value}{meta}")
-
-
-def _append_simple_list(lines: list[str], label: str, items: Any) -> None:
-    if not items:
-        return
-    lines.append(f"{label}:")
-    for item in items:
-        lines.append(f"- {item}")
-
-
-def _append_interaction_pressure(lines: list[str], items: Any) -> None:
-    if not items:
-        return
-    lines.append("interaction pressure:")
-    for item in items:
-        if not isinstance(item, dict):
-            lines.append(f"- {item}")
-            continue
-        target = item.get("target") or "unknown"
-        pressure = item.get("pressure") or ""
-        refs = _format_refs(item.get("refs") or [])
-        status = item.get("status")
-        meta = f" ({status}; {refs})" if status or refs else ""
-        lines.append(f"- {target}: {pressure}{meta}")
-
-
-def _append_dynamics(lines: list[str], items: Any) -> None:
-    if not items:
-        return
-    lines.append("")
-    lines.append("character dynamics:")
-    for item in items:
-        if not isinstance(item, dict):
-            lines.append(f"- {item}")
-            continue
-        source = item.get("source") or "unknown"
-        target = item.get("target") or "unknown"
-        refs = _format_refs(item.get("refs") or [])
-        suffix = f" ({refs})" if refs else ""
-        lines.append(f"- {source} -> {target}: {item.get('dynamic') or ''}{suffix}")
-
-
-def _append_risks(lines: list[str], label: str, items: Any) -> None:
-    if not items:
-        return
-    lines.append("")
-    lines.append(f"{label}:")
-    for item in items:
-        if not isinstance(item, dict):
-            lines.append(f"- {item}")
-            continue
-        refs = _format_refs(item.get("refs") or [])
-        suffix = f" ({refs})" if refs else ""
-        lines.append(f"- {item.get('risk') or ''}{suffix}")
-
-
-def _append_guidance(lines: list[str], items: Any) -> None:
-    if not items:
-        return
-    lines.append("")
-    lines.append("writer guidance:")
-    for item in items:
-        if not isinstance(item, dict):
-            lines.append(f"- {item}")
-            continue
-        refs = _format_refs(item.get("refs") or [])
-        suffix = f" ({refs})" if refs else ""
-        lines.append(f"- {item.get('guidance') or ''}{suffix}")
-
-
-def _format_refs(refs: list[Any]) -> str:
-    return ", ".join(str(ref) for ref in refs if str(ref).strip())
-
 
 def _llm_result_to_dict(result: LLMResult) -> dict[str, Any]:
     if hasattr(result, "to_dict"):

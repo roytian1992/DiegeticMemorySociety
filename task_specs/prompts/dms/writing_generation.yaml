@@ -13,6 +13,10 @@ task_variables:
     type: string
     required: true
     description: Retrieved memory packet for the prefix boundary.
+  - name: previous_scene_context
+    type: string
+    required: false
+    description: Optional immediate previous scene context for local continuity.
   - name: style_reference
     type: string
     required: false
@@ -36,14 +40,18 @@ template: |
   You are given:
   1. A writing request that describes what should be written next.
   2. A memory packet containing prior context, entity states, relations, episodic memories, scene summaries, and references.
-  3. An optional style reference passage from nearby writing.
-  4. A length requirement.
-  5. Output requirements for format, anchors, and constraints.
+  3. Optional immediate previous scene context for local story continuity.
+  4. An optional style reference passage from nearby writing.
+  5. A length requirement.
+  6. Output requirements for format, anchors, and constraints.
 
   # Writing Request
   {writing_request}
 
   {memory_packet}
+
+  # Previous Scene Context
+  {previous_scene_context}
 
   # Style Reference
   {style_reference}
@@ -56,7 +64,11 @@ template: |
 
   # General Rules
   - Use the memory packet only as prior context for continuity.
+  - Treat previous scene context as an auxiliary continuity reference only.
+  - Use previous scene context for immediate transition, local emotional state, and current physical setup, but never let it replace, weaken, or omit anchors from the writing request.
+  - Do not copy previous scene context verbatim or treat it as a style reference.
   - Follow the writing request as the main creative target.
+  - Preserve explicit named anchors from the writing request. Named characters, named places, organizations, and object/model identifiers such as acronyms or alphanumeric vehicle names should appear at least once, using the exact form or a clearly equivalent alias supported by the memory packet.
   - Use the style reference only for prose format, pacing, sentence length, action/dialogue balance, and surface rhythm.
   - Do not treat the style reference as new story facts unless the same fact is also supported by the memory packet or writing request.
   - Keep names, entity continuity, relationships, and known states consistent with the memory packet.

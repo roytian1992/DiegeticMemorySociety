@@ -182,6 +182,8 @@ writing_llm:
     assert (tmp_path / "e2e" / "memory_packet.md").is_file()
     assert (tmp_path / "e2e" / "attribute_cards" / "attribute_cards.md").is_file()
     assert (tmp_path / "e2e" / "social_simulation" / "social_simulation.md").is_file()
+    assert (tmp_path / "e2e" / "social_simulation" / "writer_packet.md").is_file()
+    assert summary["writing"]["inputs"]["social_simulation_path"].endswith("social_simulation/writer_packet.md")
     assert json.loads((tmp_path / "e2e" / "summary.json").read_text(encoding="utf-8"))["model_config"]["writing_llm"][
         "api_key"
     ] == "***"

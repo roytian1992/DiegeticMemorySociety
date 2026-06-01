@@ -26,6 +26,9 @@ template: |
   - Preserve concrete names, places, objects, organizations, and relationship anchors that appear in the intent.
   - Split compound intent into separate requirements when the parts can be satisfied independently.
   - Keep requirements at the level of writing intent, not exact source-scene replication.
+  - If the intent is a writing_spec with labels such as "Scene purpose", "Required entities", "Required narrative units", and "Required state or relationship", treat "Required ..." fields as the authoritative checklist.
+  - For a writing_spec, use "Scene purpose" only as context for weighting and grouping; do not convert broad scene-purpose phrasing into extra hard requirements when the required fields already cover the obligation.
+  - For a writing_spec, do not promote incidental locations, organizations, route details, or exact choreography to hard requirements unless they are explicitly listed in required fields.
   - Do not invent facts, names, scene beats, or style constraints that are not present in the intent.
   - Prefer 4 to 10 requirements.
   - Mark core requirements as "core" and less central requirements as "supporting".

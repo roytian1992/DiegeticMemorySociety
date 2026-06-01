@@ -10,6 +10,7 @@ from typing import Any
 
 from dms.config import build_openai_client_from_config, embedding_kwargs_from_config, load_local_config, redact_model_config
 from dms.evaluation import WritingEvaluationConfig, build_scene_eligibility_splits, evaluate_writing
+from dms.intent_levels import normalize_intent_level
 from dms.llm import LLMClient, LLMResult
 from dms.parsing import extract_json_value
 from dms.progress import print_progress
@@ -20,7 +21,11 @@ from dms.runners.scene_ordered_pipeline import ALL_TASKS
 from dms.scripts.wandering_earth import ScriptScene, load_script_scenes
 from dms.simulation import AttributeCardConfig, SocialSimulationConfig, build_entity_attribute_cards, run_social_simulation
 from dms.storage import AssetStoreImportConfig, ChromaMemoryIndexConfig, build_chroma_memory_index, import_run_assets
-from dms.writing import SocialWritingGenerationConfig, generate_writing_with_social_simulation_client
+from dms.writing import (
+    SocialWritingGenerationConfig,
+    format_previous_scene_context,
+    generate_writing_with_social_simulation_client,
+)
 
 
 @dataclass(frozen=True)
@@ -67,9 +72,10 @@ class WritingBenchmarkRunConfig:
     stop_on_error: bool = False
     intent_only: bool = False
     collection_name: str = "dms_retrieval_documents"
-    memory_intent_level: str = "sparse"
-    generation_intent_level: str = "sparse"
-    evaluation_intent_level: str = "detailed"
+    memory_intent_level: str = "writing_intent"
+    social_simulation_intent_level: str = "social_simulation_intent"
+    generation_intent_level: str = "writing_intent"
+    evaluation_intent_level: str = "writing_spec"
     scene_top_k: int = 5
     entity_memory_top_k: int = 12
     max_entity_memories_before_vector: int = 50
@@ -77,7 +83,9 @@ class WritingBenchmarkRunConfig:
     attribute_entity_types: tuple[str, ...] = ("character",)
     attribute_entity_names: tuple[str, ...] = ()
     max_memories_per_entity: int = 16
-    style_reference_mode: str = "previous_scene"
+    previous_scene_context_mode: str = "previous_scene"
+    previous_scene_context_max_chars: int = 800
+    style_reference_mode: str = "none"
     length_margin: float = 0.2
     length_requirement: str = ""
     output_requirements: str = (
@@ -309,29 +317,47 @@ def _run_one_writing_target(
     embedding_kwargs: dict[str, Any],
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    intents_dir = output_dir / "intents"
-    print_progress("writing_target:stage", 0, 7, detail=f"scene={scene.scene_id} stage=start")
-    sparse_intent = _extract_intent(
+    intents_dir = output_dir / "intent"
+    print_progress("writing_target:stage", 0, 8, detail=f"scene={scene.scene_id} stage=start")
+    social_simulation_intent = _extract_intent(
         scene,
-        level="sparse",
-        prompt_id="dms/writing_intent_sparse",
-        task_settings_path=Path("task_specs/task_settings/writing_intent_sparse_task.json"),
-        output_dir=intents_dir / "sparse",
+        level="social_simulation_intent",
+        prompt_id="dms/social_simulation_intent",
+        task_settings_path=Path("task_specs/task_settings/social_simulation_intent_task.json"),
+        output_dir=intents_dir / "social_simulation_intent",
         prompt_dir=config.prompt_dir,
         llm_client=llm_client,
+        output_key="social_simulation_intent",
     )
-    print_progress("writing_target:stage", 1, 7, detail=f"scene={scene.scene_id} stage=sparse_intent")
-    detailed_intent = _extract_intent(
+    print_progress("writing_target:stage", 1, 8, detail=f"scene={scene.scene_id} stage=social_simulation_intent")
+    writing_intent = _extract_intent(
         scene,
-        level="detailed",
-        prompt_id="dms/writing_intent_detailed",
-        task_settings_path=Path("task_specs/task_settings/writing_intent_detailed_task.json"),
-        output_dir=intents_dir / "detailed",
+        level="writing_intent",
+        prompt_id="dms/writing_intent",
+        task_settings_path=Path("task_specs/task_settings/writing_intent_task.json"),
+        output_dir=intents_dir / "writing_intent",
         prompt_dir=config.prompt_dir,
         llm_client=llm_client,
+        output_key="writing_intent",
     )
-    print_progress("writing_target:stage", 2, 7, detail=f"scene={scene.scene_id} stage=detailed_intent")
-    intents = {"sparse": sparse_intent, "detailed": detailed_intent}
+    print_progress("writing_target:stage", 2, 8, detail=f"scene={scene.scene_id} stage=writing_intent")
+    writing_spec = _extract_intent(
+        scene,
+        level="writing_spec",
+        prompt_id="dms/writing_spec",
+        task_settings_path=Path("task_specs/task_settings/writing_spec_task.json"),
+        output_dir=intents_dir / "writing_spec",
+        prompt_dir=config.prompt_dir,
+        llm_client=llm_client,
+        output_key="writing_spec",
+        output_aliases=("reference_scene_spec",),
+    )
+    print_progress("writing_target:stage", 3, 8, detail=f"scene={scene.scene_id} stage=writing_spec")
+    intents = {
+        "social_simulation_intent": social_simulation_intent,
+        "writing_intent": writing_intent,
+        "writing_spec": writing_spec,
+    }
 
     target_summary: dict[str, Any] = {
         "scene_id": scene.scene_id,
@@ -339,13 +365,21 @@ def _run_one_writing_target(
         "title": scene.title,
         "status": "intent_only" if config.intent_only else "complete",
         "intents": {
-            "sparse": sparse_intent.get("writing_intent"),
-            "detailed": detailed_intent.get("writing_intent"),
+            "social_simulation_intent": social_simulation_intent.get("social_simulation_intent"),
+            "writing_intent": writing_intent.get("writing_intent"),
+            "writing_spec": writing_spec.get("writing_spec"),
+            "writing_spec_text": writing_spec.get("intent_text"),
+        },
+        "legacy_intent_aliases": {
+            "reference_scene_spec": "writing_spec",
+            "sparse": "social_simulation_intent",
+            "detailed": "writing_spec",
         },
         "paths": {
             "target_dir": str(output_dir),
-            "sparse_intent": str(intents_dir / "sparse" / "summary.json"),
-            "detailed_intent": str(intents_dir / "detailed" / "summary.json"),
+            "social_simulation_intent": str(intents_dir / "social_simulation_intent" / "summary.json"),
+            "writing_intent": str(intents_dir / "writing_intent" / "summary.json"),
+            "writing_spec": str(intents_dir / "writing_spec" / "summary.json"),
         },
     }
     if config.intent_only:
@@ -353,6 +387,7 @@ def _run_one_writing_target(
         return target_summary
 
     memory_intent = _intent_text(intents, config.memory_intent_level)
+    social_intent = _intent_text(intents, config.social_simulation_intent_level)
     generation_intent = _intent_text(intents, config.generation_intent_level)
     evaluation_intent = _intent_text(intents, config.evaluation_intent_level)
 
@@ -376,8 +411,8 @@ def _run_one_writing_target(
     memory_md.write_text(format_memory_packet_markdown(memory_packet), encoding="utf-8")
     print_progress(
         "writing_target:stage",
-        3,
-        7,
+        4,
+        8,
         detail=(
             f"scene={scene.scene_id} stage=memory_packet entities={len(memory_packet.get('entities') or [])} "
             f"memories={len(memory_packet.get('episodic_memories') or [])}"
@@ -399,8 +434,8 @@ def _run_one_writing_target(
     )
     print_progress(
         "writing_target:stage",
-        4,
-        7,
+        5,
+        8,
         detail=f"scene={scene.scene_id} stage=attribute_cards cards={attribute_summary.get('card_count')}",
     )
 
@@ -408,7 +443,7 @@ def _run_one_writing_target(
     social_summary = run_social_simulation(
         SocialSimulationConfig(
             attribute_cards_path=attribute_cards_dir / "attribute_cards.json",
-            writing_intent=generation_intent,
+            social_simulation_intent=social_intent,
             output_dir=social_dir,
             prompt_dir=config.prompt_dir,
             overwrite=True,
@@ -417,22 +452,30 @@ def _run_one_writing_target(
     )
     print_progress(
         "writing_target:stage",
-        5,
-        7,
+        6,
+        8,
         detail=f"scene={scene.scene_id} stage=social_simulation characters={social_summary.get('character_simulation_count')}",
     )
 
+    previous_scene = _previous_scene(scene, scenes) if config.previous_scene_context_mode == "previous_scene" else None
+    previous_scene_context = _benchmark_previous_scene_context(
+        previous_scene,
+        memory_packet=memory_packet,
+        max_chars=config.previous_scene_context_max_chars,
+    )
     writing_dir = output_dir / "writing"
     writing_summary = generate_writing_with_social_simulation_client(
         SocialWritingGenerationConfig(
             writing_request=f"写一段新的叙事内容：{generation_intent}",
             memory_packet_path=memory_md,
             attribute_cards_path=attribute_cards_dir / "attribute_cards.md",
-            social_simulation_path=social_dir / "social_simulation.md",
+            social_simulation_path=social_dir / "writer_packet.md",
             output_dir=writing_dir,
             model_config_path=config.model_config_path,
             model_section=config.writing_llm_section,
             prompt_dir=config.prompt_dir,
+            previous_scene_context=previous_scene_context,
+            previous_scene_context_max_chars=config.previous_scene_context_max_chars,
             style_reference_script=config.script_path if config.style_reference_mode == "previous_scene" else None,
             style_reference_scene_id=_previous_scene_id(scene, scenes) if config.style_reference_mode == "previous_scene" else None,
             length_requirement=config.length_requirement or _length_requirement(scene, margin=config.length_margin),
@@ -444,8 +487,8 @@ def _run_one_writing_target(
     )
     print_progress(
         "writing_target:stage",
-        6,
         7,
+        8,
         detail=f"scene={scene.scene_id} stage=writing chars={writing_summary.get('output', {}).get('body_chars')}",
     )
 
@@ -462,15 +505,16 @@ def _run_one_writing_target(
         ),
         llm_client=llm_client,
     )
-    print_progress("writing_target:stage", 7, 7, detail=f"scene={scene.scene_id} stage=evaluation")
+    print_progress("writing_target:stage", 8, 8, detail=f"scene={scene.scene_id} stage=evaluation")
 
     target_summary.update(
         {
             "status": "complete",
             "intent_levels": {
-                "memory": config.memory_intent_level,
-                "generation": config.generation_intent_level,
-                "evaluation": config.evaluation_intent_level,
+                "memory": normalize_intent_level(config.memory_intent_level),
+                "social_simulation": normalize_intent_level(config.social_simulation_intent_level),
+                "generation": normalize_intent_level(config.generation_intent_level),
+                "evaluation": normalize_intent_level(config.evaluation_intent_level),
             },
             "counts": {
                 "retrieved_entities": len(memory_packet.get("entities") or []),
@@ -486,15 +530,28 @@ def _run_one_writing_target(
                 "memory_packet_json": str(memory_json),
                 "memory_packet_markdown": str(memory_md),
                 "attribute_cards": str(attribute_cards_dir / "attribute_cards.md"),
-                "social_simulation": str(social_dir / "social_simulation.md"),
+                "social_simulation": str(social_dir / "writer_packet.md"),
                 "draft": str(writing_dir / "draft.md"),
                 "evaluation": str(evaluation_dir / "summary.json"),
                 "summary": str(output_dir / "summary.json"),
+                "previous_scene_context": str(writing_dir / "previous_scene_context.md")
+                if previous_scene_context
+                else None,
             },
             "writing": {
                 "draft_chars": writing_summary.get("output", {}).get("body_chars"),
                 "draft_non_ws_chars": writing_summary.get("output", {}).get("body_non_ws_chars"),
                 "ref_ids_present": writing_summary.get("output", {}).get("ref_ids_present"),
+                "request_anchors": writing_summary.get("output", {}).get("request_anchors"),
+                "missing_request_anchors": writing_summary.get("output", {}).get("missing_request_anchors"),
+                "writer_packet_artifact_terms_present": writing_summary.get("output", {}).get(
+                    "writer_packet_artifact_terms_present"
+                ),
+                "dialogue_risk_phrases_present": writing_summary.get("output", {}).get(
+                    "dialogue_risk_phrases_present"
+                ),
+                "previous_scene_context_chars": len(previous_scene_context),
+                "previous_scene_context_source_scene_id": previous_scene.scene_id if previous_scene else None,
             },
         }
     )
@@ -511,6 +568,8 @@ def _extract_intent(
     output_dir: Path,
     prompt_dir: Path,
     llm_client: LLMClient,
+    output_key: str = "writing_intent",
+    output_aliases: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     settings = json.loads(task_settings_path.read_text(encoding="utf-8"))
@@ -541,12 +600,32 @@ def _extract_intent(
     if not parsed.ok:
         raise ValueError(f"Failed to parse {level} writing intent for {scene.scene_id}: {parsed.error}")
     data = parsed.data if isinstance(parsed.data, dict) else {}
-    intent = str(data.get("writing_intent") or "").strip()
+    artifact = _first_present(data, (output_key, *output_aliases))
+    intent_text = _intent_artifact_text(artifact)
+    natural_text = _intent_artifact_natural_language_text(artifact)
+    source_non_ws_chars = len(re.sub(r"\s+", "", scene.content or ""))
+    artifact_non_ws_chars = len(re.sub(r"\s+", "", natural_text))
+    formatted_text_non_ws_chars = len(re.sub(r"\s+", "", intent_text))
+    if source_non_ws_chars and artifact_non_ws_chars > source_non_ws_chars:
+        raise ValueError(
+            f"{level} for {scene.scene_id} is longer than source text: "
+            f"{artifact_non_ws_chars} > {source_non_ws_chars}"
+        )
     summary = {
         "level": level,
         "scene_id": scene.scene_id,
         "title": scene.title,
-        "writing_intent": intent,
+        output_key: artifact,
+        "intent_text": intent_text,
+        "length_check": {
+            "source_non_ws_chars": source_non_ws_chars,
+            "artifact_non_ws_chars": artifact_non_ws_chars,
+            "formatted_text_non_ws_chars": formatted_text_non_ws_chars,
+            "artifact_to_source_ratio": round(artifact_non_ws_chars / source_non_ws_chars, 4)
+            if source_non_ws_chars
+            else None,
+            "must_not_exceed_source": True,
+        },
         "llm": {"provider": llm_client.provider, "model": llm_client.model},
         "usage": result.usage,
         "paths": {
@@ -558,7 +637,7 @@ def _extract_intent(
         },
     }
     (output_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    (output_dir / "writing_intent.txt").write_text(intent + "\n", encoding="utf-8")
+    (output_dir / f"{output_key}.txt").write_text(intent_text + "\n", encoding="utf-8")
     return summary
 
 
@@ -690,19 +769,118 @@ def _aggregate_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _intent_text(intents: dict[str, dict[str, Any]], level: str) -> str:
-    key = str(level or "").strip().lower()
+    key = normalize_intent_level(level)
     if key not in intents:
         raise ValueError(f"Unknown intent level: {level}")
-    return str(intents[key].get("writing_intent") or "").strip()
+    return str(
+        intents[key].get("intent_text")
+        or intents[key].get("writing_intent")
+        or intents[key].get("writing_spec")
+        or ""
+    ).strip()
+
+
+def _first_present(data: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    for key in keys:
+        if key in data:
+            return data[key]
+    return None
+
+
+def _intent_artifact_text(artifact: Any) -> str:
+    if artifact is None:
+        return ""
+    if isinstance(artifact, str):
+        return artifact.strip()
+    if isinstance(artifact, dict):
+        lines: list[str] = []
+        purpose = str(artifact.get("scene_purpose") or "").strip()
+        if purpose:
+            lines.append(f"Scene purpose: {purpose}")
+        for key, label in (
+            ("required_entities", "Required entities"),
+            ("required_narrative_units", "Required narrative units"),
+            ("required_state_or_relationship", "Required state or relationship"),
+            ("style_or_form_constraints", "Style or form constraints"),
+        ):
+            values = artifact.get(key)
+            if isinstance(values, list) and values:
+                cleaned = [str(value).strip() for value in values if str(value).strip()]
+                if cleaned:
+                    lines.append(f"{label}: " + "; ".join(cleaned))
+        if lines:
+            return "\n".join(lines).strip()
+    return json.dumps(artifact, ensure_ascii=False, indent=2).strip()
+
+
+def _intent_artifact_natural_language_text(artifact: Any) -> str:
+    if artifact is None:
+        return ""
+    if isinstance(artifact, str):
+        return artifact.strip()
+    if isinstance(artifact, dict):
+        parts: list[str] = []
+        purpose = str(artifact.get("scene_purpose") or "").strip()
+        if purpose:
+            parts.append(purpose)
+        for key in (
+            "required_entities",
+            "required_narrative_units",
+            "required_state_or_relationship",
+            "style_or_form_constraints",
+        ):
+            values = artifact.get(key)
+            if isinstance(values, list):
+                parts.extend(str(value).strip() for value in values if str(value).strip())
+        if parts:
+            return "\n".join(parts).strip()
+    return json.dumps(artifact, ensure_ascii=False, indent=2).strip()
 
 
 def _previous_scene_id(scene: ScriptScene, scenes: list[ScriptScene]) -> str | None:
+    previous = _previous_scene(scene, scenes)
+    return previous.scene_id if previous else None
+
+
+def _previous_scene(scene: ScriptScene, scenes: list[ScriptScene]) -> ScriptScene | None:
     previous = None
     for candidate in scenes:
         if candidate.scene_id == scene.scene_id:
-            return previous.scene_id if previous else None
+            return previous
         previous = candidate
     return None
+
+
+def _benchmark_previous_scene_context(
+    scene: ScriptScene | None,
+    *,
+    memory_packet: dict[str, Any],
+    max_chars: int,
+) -> str:
+    if scene is None:
+        return ""
+    return format_previous_scene_context(
+        scene,
+        max_chars=max_chars,
+        summary=_related_scene_summary_text(memory_packet, scene.scene_id),
+        entities=_memory_packet_entity_names(memory_packet),
+    )
+
+
+def _related_scene_summary_text(memory_packet: dict[str, Any], scene_id: str) -> str:
+    for summary in memory_packet.get("related_scene_summaries") or []:
+        if str(summary.get("scene_id") or "") == scene_id:
+            return str(summary.get("summary") or "").strip()
+    return ""
+
+
+def _memory_packet_entity_names(memory_packet: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+    for entity in memory_packet.get("entities") or []:
+        name = str(entity.get("canonical_name") or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return names
 
 
 def _length_requirement(scene: ScriptScene, *, margin: float) -> str:

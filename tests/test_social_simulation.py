@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from dms.llm import LLMResult
 from dms.simulation import SocialSimulationConfig, run_social_simulation
 
@@ -77,7 +79,7 @@ def test_run_social_simulation_from_attribute_cards(tmp_path: Path) -> None:
     summary = run_social_simulation(
         SocialSimulationConfig(
             attribute_cards_path=cards_path,
-            writing_intent="写一段刘培强和张鹏返航途中的人物互动。",
+            social_simulation_intent="刘培强和张鹏在返航途中互动。",
             output_dir=tmp_path / "simulation",
             overwrite=True,
         ),
@@ -85,15 +87,63 @@ def test_run_social_simulation_from_attribute_cards(tmp_path: Path) -> None:
     )
 
     assert summary["character_simulation_count"] == 2
+    assert summary["inputs"]["social_simulation_intent"] == "刘培强和张鹏在返航途中互动。"
+    assert summary["inputs"]["source_isolation"]["target_scene_text_visible"] is False
+    assert summary["inputs"]["source_isolation"]["writing_spec_visible"] is False
     assert len(summary["social_simulation"]["scene_beats"]) == 1
+    assert summary["algorithmic_social_plan"]["version"] == "asip_v0"
+    selected_sequence = summary["algorithmic_social_plan"]["selected_sequence"]
+    assert selected_sequence["selection_strategy"] == "multi_candidate_rerank_v1"
+    assert selected_sequence["candidate_sequence_count"] >= 1
+    assert "score_components" in selected_sequence
+    assert summary["social_simulation_metrics"]["candidate_action_count"] >= 1
+    assert summary["social_simulation_metrics"]["candidate_sequence_count"] >= 1
+    assert summary["verification"]["status"] in {"pass", "warn"}
+    assert summary["writer_packet_verification"]["status"] in {"pass", "warn"}
     assert len(client.prompts) == 3
     assert (tmp_path / "simulation" / "character_simulations.json").is_file()
     assert (tmp_path / "simulation" / "social_simulation.json").is_file()
+    assert (tmp_path / "simulation" / "algorithmic_social_plan.json").is_file()
+    assert (tmp_path / "simulation" / "verification.json").is_file()
+    assert (tmp_path / "simulation" / "writer_packet_verification.json").is_file()
+    assert (tmp_path / "simulation" / "writer_packet.md").is_file()
     markdown = (tmp_path / "simulation" / "social_simulation.md").read_text(encoding="utf-8")
     assert "# Social Simulation" in markdown
+    assert "social simulation intent" in markdown
+    assert "target scene text visible: no" in markdown
     assert "intent assumptions" in markdown
     assert "intent basis" in markdown
+    assert "dialogue posture" in markdown
+    assert "## Algorithmic Social Plan" in markdown
+    assert "## Verification" in markdown
     assert "低空返航动作先制造压迫感" in markdown
+    writer_packet = (tmp_path / "simulation" / "writer_packet.md").read_text(encoding="utf-8")
+    assert "# Social Simulation Writer Packet" in writer_packet
+    assert "target scene text visible: no" in writer_packet
+    assert "## Optional Interaction Functions" in writer_packet
+    assert "posture only" in writer_packet
+    for prompt in client.prompts:
+        assert "social_simulation_intent" in prompt
+        assert '"writing_spec"' not in prompt
+        assert "J20C返航途中穿越战区废墟时的紧张氛围" not in prompt
+
+
+def test_social_simulation_rejects_target_scene_source_fields(tmp_path: Path) -> None:
+    cards = _cards()
+    cards[0]["content"] = "这是目标 scene 6 原文，模拟阶段不应该看到。"
+    cards_path = tmp_path / "attribute_cards.json"
+    cards_path.write_text(json.dumps(cards, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Forbidden target-scene source field"):
+        run_social_simulation(
+            SocialSimulationConfig(
+                attribute_cards_path=cards_path,
+                social_simulation_intent="刘培强和张鹏在返航途中互动。",
+                output_dir=tmp_path / "simulation",
+                overwrite=True,
+            ),
+            llm_client=FakeSocialSimulationClient(),
+        )
 
 
 def _cards() -> list[dict]:

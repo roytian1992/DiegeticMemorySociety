@@ -1,0 +1,17 @@
+{
+  "task": "writing_spec",
+  "prompt_id": "dms/writing_spec",
+  "task_name": "写作评测规格抽取",
+  "intent_policy": [
+    "This task is for benchmark evaluation ground truth only, not for writing generation.",
+    "The output must be a concise writing_spec object, not an author-facing writing intent.",
+    "Evaluate core scene function rather than exact scene replication.",
+    "Keep the combined natural-language content shorter than the source passage and never longer than the source passage.",
+    "Preserve central named entities, locations, important objects, concepts, organizations, or occasions only when their absence would make the scene identity fail.",
+    "Use compact required_narrative_units rather than a full synopsis or beat-by-beat outline.",
+    "Do not turn incidental geography, destinations, route labels, exact choreography, or replaceable physical mechanics into hard requirements unless they are central to the scene conflict.",
+    "For short action scenes, preserve behavior function and character pressure before exact physical mechanics.",
+    "Avoid exact dialogue, evidence spans, retrieval instructions, query plans, and generation instructions.",
+    "The output must be parseable JSON."
+  ]
+}

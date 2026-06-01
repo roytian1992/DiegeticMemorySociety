@@ -22,13 +22,21 @@ class FakeBenchmarkClient:
         self.model = model
 
     def complete(self, prompt: str) -> LLMResult:
-        if "Extract a sparse exploratory author seed" in prompt:
-            payload = {"unit_id": "scene_0005", "writing_intent": "刘培强和张鹏在J20C返航途中互动。"}
+        if "Extract a low-information social simulation intent" in prompt:
+            payload = {"social_simulation_intent": "刘培强和张鹏在J20C返航途中。"}
             text = json.dumps(payload, ensure_ascii=False)
-        elif "Extract a detailed writing intent" in prompt:
+        elif "Extract a realistic author writing intent" in prompt:
+            payload = {"writing_intent": "刘培强和张鹏在J20C返航途中互动。"}
+            text = json.dumps(payload, ensure_ascii=False)
+        elif "Extract a concise writing specification" in prompt:
             payload = {
-                "unit_id": "scene_0005",
-                "writing_intent": "写出刘培强和张鹏在J20C返航途中的紧张互动，并体现刘培强的焦躁。",
+                "writing_spec": {
+                    "scene_purpose": "写出返航途中的紧张互动。",
+                    "required_entities": ["刘培强", "张鹏", "J20C"],
+                    "required_narrative_units": ["两人在返航途中互动", "体现刘培强的焦躁"],
+                    "required_state_or_relationship": ["两人关系保持张力"],
+                    "style_or_form_constraints": [],
+                },
             }
             text = json.dumps(payload, ensure_ascii=False)
         elif "Build a writing-facing attribute card" in prompt:
@@ -209,6 +217,40 @@ writing_llm:
     assert summary["completed_count"] == 1
     assert summary["failure_count"] == 0
     assert summary["aggregate_metrics"]["generated_overall_mean"] == 1.0
+    assert summary["config"]["style_reference_mode"] == "none"
+    assert summary["config"]["previous_scene_context_mode"] == "previous_scene"
     target_summary = json.loads((tmp_path / "bench" / "targets" / "scene_0005" / "summary.json").read_text(encoding="utf-8"))
-    assert target_summary["intent_levels"]["memory"] == "sparse"
+    assert target_summary["intent_levels"]["memory"] == "writing_intent"
+    assert target_summary["intent_levels"]["social_simulation"] == "social_simulation_intent"
+    assert target_summary["intent_levels"]["evaluation"] == "writing_spec"
+    assert target_summary["legacy_intent_aliases"] == {
+        "reference_scene_spec": "writing_spec",
+        "sparse": "social_simulation_intent",
+        "detailed": "writing_spec",
+    }
+    assert "sparse" not in target_summary["intents"]
+    assert "detailed" not in target_summary["intents"]
+    assert "reference_scene_spec" not in target_summary["paths"]
+    assert target_summary["writing"]["previous_scene_context_source_scene_id"] == "scene_0004"
+    assert target_summary["writing"]["missing_request_anchors"] == []
+    assert target_summary["writing"]["writer_packet_artifact_terms_present"] == []
+    assert target_summary["writing"]["dialogue_risk_phrases_present"] == []
+    assert (
+        tmp_path / "bench" / "targets" / "scene_0005" / "intent" / "social_simulation_intent" / "social_simulation_intent.txt"
+    ).is_file()
+    assert (tmp_path / "bench" / "targets" / "scene_0005" / "intent" / "writing_intent" / "writing_intent.txt").is_file()
+    assert (
+        tmp_path / "bench" / "targets" / "scene_0005" / "intent" / "writing_spec" / "writing_spec.txt"
+    ).is_file()
     assert (tmp_path / "bench" / "targets" / "scene_0005" / "social_simulation" / "social_simulation.md").is_file()
+    assert (tmp_path / "bench" / "targets" / "scene_0005" / "social_simulation" / "writer_packet.md").is_file()
+    social_summary = json.loads(
+        (tmp_path / "bench" / "targets" / "scene_0005" / "social_simulation" / "summary.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert social_summary["inputs"]["social_simulation_intent"] == "刘培强和张鹏在J20C返航途中。"
+    assert social_summary["inputs"]["source_isolation"]["target_scene_text_visible"] is False
+    assert social_summary["inputs"]["source_isolation"]["writing_spec_visible"] is False
+    assert (tmp_path / "bench" / "targets" / "scene_0005" / "writing" / "previous_scene_context.md").is_file()
+    assert not (tmp_path / "bench" / "targets" / "scene_0005" / "writing" / "style_reference.md").exists()
