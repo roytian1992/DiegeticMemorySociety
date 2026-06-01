@@ -125,18 +125,26 @@ author intent and story memory.
 
 ### Writing Intent Parser
 
-The system keeps two levels of writing-intent extraction because social
-simulation and retrieval-conditioned writing need different amounts of
-direction:
+The system separates low-information social exploration, realistic author
+input, and reference-only evaluation ground truth:
 
 | Level | Prompt id | When to use | Output boundary |
 | --- | --- | --- | --- |
-| Sparse author seed | `dms/writing_intent_sparse` | Early social simulation or exploration, when the author may only know the key characters, place, occasion, or situation | One open-ended setup sentence with minimal anchors; no target outcome, beat list, or retrieval plan |
-| Detailed writing intent | `dms/writing_intent_detailed` | Memory-packet construction, direct writing generation, and intent-consistency evaluation | One compact paragraph with concrete anchors, scene function, emotional direction, relationship dynamic, atmosphere, pressure, and stakes |
+| Social simulation intent | `dms/social_simulation_intent` | Exploratory character/social simulation | One low-information setup sentence with minimal anchors; less specific than writing intent; no behavior outcome, synopsis, beat list, or retrieval plan |
+| Author writing intent | `dms/writing_intent` | Memory-packet construction and writing generation | One concise author-facing sentence with central anchors; much shorter than the source; no target outcome, synopsis, beat list, or retrieval plan |
+| Writing spec | `dms/writing_spec` | Benchmark evaluation ground truth only | Compact required entities, narrative units, and state/relationship requirements; never fed into generation; natural-language content must not exceed the source scene length |
 
-The legacy prompt id `dms/writing_intent` remains a compatibility entry for
-existing runs and should be treated as detailed-level input unless a task
-explicitly asks for the sparse level.
+The old sparse/detailed writing-intent prompt split has been retired. New
+benchmark runs should use `social_simulation_intent` for social exploration,
+`writing_intent` for retrieval and generation, and `writing_spec` for
+evaluation.
+
+Writing generation also has a separate `previous_scene_context` channel for
+immediate continuity. In benchmark runs it defaults to the previous script
+scene: if the rendered context fits within 800 non-whitespace characters, the
+full previous scene is shown; otherwise the writer sees a compact summary and
+entity list. This channel is not used for retrieval scoring and is not a style
+reference.
 
 The parser should extract at least:
 

@@ -16,9 +16,11 @@ The repository now contains a working Python prototype rather than only the orig
 - SQLite stores entities, aliases, relations, memories, scene summaries, metadata, and retrieval documents.
 - Chroma provides vector retrieval over memory and summary documents.
 - The retrieval pipeline builds a prefix-only memory packet for a target scene, so generation cannot read target or future scene memories.
-- Sparse and detailed writing-intent extraction are both implemented: sparse intent can drive exploratory generation, detailed intent is used for evaluation.
-- Social simulation is positioned as a low-spec ideation layer: it uses sparse intent plus retrieved memory and character cards to suggest plausible character behavior.
-- Writing generation uses a separate `writing_llm` config section and does not apply automatic post-generation repair.
+- Social-simulation intent extraction produces a low-information `social_simulation_intent` for exploratory character behavior.
+- Writing-intent extraction produces a concise author-facing `writing_intent` for retrieval and generation.
+- Writing-spec extraction produces `writing_spec` as evaluation ground truth only; it is not fed into writing prompts.
+- Social simulation is positioned as a low-spec ideation layer: it uses the low-information social intent plus retrieved memory and character cards to suggest plausible character behavior.
+- Writing generation uses a separate `writing_llm` config section, receives an explicit previous-scene continuity context by default in benchmark runs, and does not apply automatic post-generation repair.
 - Evaluation is LLM-as-judge over three dimensions: writing intent consistency, writing quality, and memory faithfulness.
 - A Gradio UI is available for inspecting benchmark runs, scene artifacts, memory packets, social simulation, drafts, and scores.
 

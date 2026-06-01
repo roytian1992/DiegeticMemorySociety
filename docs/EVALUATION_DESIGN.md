@@ -108,24 +108,36 @@ Use the delta only as calibration. A generated output can be good even if it is
 different from the reference, as long as it satisfies the intent, writes well,
 and remains memory-faithful.
 
-## Sparse vs Detailed Intent
+## Social Intent, Writing Intent, And Writing Spec
 
-The benchmark may generate from a sparse author seed, especially when testing
-social simulation as an exploratory aid. Evaluation should still use detailed
-intent by default.
+The benchmark separates low-information social exploration, realistic author
+input, and evaluation ground truth. Social simulation should receive less
+target-scene information than generation. Evaluation should use a reference-only
+writing specification extracted from the held-out target scene.
 
 Policy:
 
-- `sparse intent`: input to exploratory social simulation and generation when
-  the author only knows characters, place, vehicle, or situation;
-- `detailed intent`: input to intent-consistency evaluation, because it exposes
-  missing scene-specific anchors such as required action set pieces, emotional
-  direction, or transition goals;
-- report both the generation intent level and evaluation intent level in every
-  benchmark result.
+- `social_simulation_intent`: low-information setup for exploratory social
+  simulation. It should be less specific than `writing_intent` and should leave
+  behavior, dialogue, emotional turns, and outcomes open.
+- `writing_intent`: realistic author input for retrieval and generation. It
+  should be much shorter than the source scene and must not become a synopsis
+  or beat list.
+- `writing_spec`: evaluation ground truth only. It is extracted from
+  the held-out target scene, represented as compact required entities,
+  narrative units, and state/relationship requirements, and must not be fed into
+  generation.
+- report the social, generation, and evaluation artifacts in every benchmark
+  result.
+- benchmark writing prompts may receive `previous_scene_context` for immediate
+  continuity. This context is sourced only from the already-visible previous
+  scene, not from the held-out target. It is capped at 800 non-whitespace
+  characters; longer previous scenes are represented as summary plus entities.
+  It must not be confused with the evaluation-only `writing_spec`.
 
-This prevents sparse-intent tests from receiving inflated scores merely because
-the task was underspecified.
+This prevents generated text from receiving inflated scores merely because the
+author input was underspecified, while also preventing the generator from seeing
+an unrealistically detailed target-scene description.
 
 ## Minimal Judge Schema
 

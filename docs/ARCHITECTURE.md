@@ -179,17 +179,29 @@ script or a bounded subset. It has two stages:
 1. `prepare-writing-benchmark`: builds eligibility splits, optionally runs the
    scene-ordered extractor, imports assets into SQLite, and builds a Chroma
    retrieval index.
-2. `run-writing-benchmark`: for each eligible target scene, extracts both
-   sparse and detailed writing intents, builds a prefix-only memory packet,
-   builds character attribute cards, runs social simulation, generates a raw
-   draft, and evaluates the draft against the detailed intent.
+2. `run-writing-benchmark`: for each eligible target scene, extracts a
+   low-information `social_simulation_intent`, a concise author-facing
+   `writing_intent`, and a reference-only `writing_spec`, builds a
+   prefix-only memory packet, builds character attribute cards, runs social
+   simulation, generates a raw draft, and evaluates the draft against the
+   writing specification.
 
 The default benchmark policy is deliberately conservative:
 
-- generation can use sparse intent for exploratory social simulation;
-- evaluation uses detailed intent, so missing target-scene anchors are visible;
+- social simulation uses `social_simulation_intent`, a deliberately
+  under-specified setup for character exploration;
+- generation uses `writing_intent`, a concise author brief that must stay much
+  shorter than the target source scene;
+- evaluation uses `writing_spec`, a compact ground-truth requirement
+  specification extracted from the masked target scene;
 - retrieval uses `before_scene_id=<target_scene>` and never reads target/future
   scene memories;
+- writing receives a separate `previous_scene_context` for immediate local
+  continuity by default. If the previous scene fits within the configured
+  limit, currently 800 non-whitespace characters, the context contains the
+  full previous scene; otherwise it contains a compact summary and entity list.
+  This is distinct from `style_reference`, which defaults to disabled and can
+  still be enabled explicitly for surface-form experiments;
 - generated drafts are not repaired before evaluation.
 
 For existing scene-1-to-5 assets, start target runs from scene 6:
@@ -238,7 +250,7 @@ PYTHONPATH=src python3 -m dms.cli launch-ui \
 It exposes four views:
 
 - benchmark overview table and aggregate summary;
-- scene inspector for sparse/detailed intents, memory packet, attribute cards,
+- scene inspector for social simulation intent, writing intent, writing spec, memory packet, attribute cards,
   social simulation, draft, reference, and scores;
 - one-scene run button for demos;
 - eligibility split preview.
