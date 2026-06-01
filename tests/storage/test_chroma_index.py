@@ -20,9 +20,12 @@ def test_chroma_index_searches_sqlite_filtered_entity_memories(tmp_path):
             persist_dir=chroma_dir,
             reset=True,
             embedding_dim=64,
+            upsert_batch_size=3,
         )
     )
     assert summary["document_count"] == 7
+    assert summary["upsert_batch_size"] == 3
+    assert summary["upsert_batch_count"] == 3
 
     result = search_entity_memories(
         db_path,

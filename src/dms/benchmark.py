@@ -40,6 +40,7 @@ class WritingBenchmarkPrepareConfig:
     db_path: Path | None = None
     chroma_dir: Path | None = None
     collection_name: str = "dms_retrieval_documents"
+    chroma_upsert_batch_size: int = 1000
     dry_run: bool = True
     overwrite: bool = False
 
@@ -143,6 +144,7 @@ def prepare_writing_benchmark_assets(config: WritingBenchmarkPrepareConfig) -> d
                 persist_dir=config.chroma_dir,
                 collection_name=config.collection_name,
                 reset=config.overwrite,
+                upsert_batch_size=config.chroma_upsert_batch_size,
                 **embedding_kwargs,
             )
         )

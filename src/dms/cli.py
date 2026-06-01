@@ -467,6 +467,7 @@ def main(argv: list[str] | None = None) -> int:
     chroma_index.add_argument("--embedding-api-key", default=None)
     chroma_index.add_argument("--embedding-max-tokens", type=int, default=8192)
     chroma_index.add_argument("--embedding-timeout", type=int, default=60)
+    chroma_index.add_argument("--upsert-batch-size", type=int, default=1000)
     chroma_index.add_argument("--overwrite", action="store_true")
 
     search_entity_memory = subparsers.add_parser(
@@ -661,6 +662,7 @@ def main(argv: list[str] | None = None) -> int:
     benchmark_prepare.add_argument("--db-path", type=Path, default=None)
     benchmark_prepare.add_argument("--chroma-dir", type=Path, default=None)
     benchmark_prepare.add_argument("--collection-name", default="dms_retrieval_documents")
+    benchmark_prepare.add_argument("--chroma-upsert-batch-size", type=int, default=1000)
     benchmark_prepare.add_argument("--dry-run", action=argparse.BooleanOptionalAction, default=True)
     benchmark_prepare.add_argument("--overwrite", action="store_true")
 
@@ -1038,6 +1040,7 @@ def main(argv: list[str] | None = None) -> int:
                 persist_dir=args.persist_dir,
                 collection_name=args.collection_name,
                 reset=args.overwrite,
+                upsert_batch_size=args.upsert_batch_size,
                 **embedding_kwargs,
             )
         )
@@ -1234,6 +1237,7 @@ def main(argv: list[str] | None = None) -> int:
                 db_path=args.db_path,
                 chroma_dir=args.chroma_dir,
                 collection_name=args.collection_name,
+                chroma_upsert_batch_size=args.chroma_upsert_batch_size,
                 dry_run=args.dry_run,
                 overwrite=args.overwrite,
             )

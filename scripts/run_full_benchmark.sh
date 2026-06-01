@@ -13,6 +13,7 @@ SCENE_LIMIT="${SCENE_LIMIT:-}"
 SCENE_TASK_CONCURRENCY="${SCENE_TASK_CONCURRENCY:-3}"
 MAX_CHUNK_UNITS="${MAX_CHUNK_UNITS:-800}"
 COLLECTION_NAME="${COLLECTION_NAME:-dms_retrieval_documents_bge_m3}"
+CHROMA_UPSERT_BATCH_SIZE="${CHROMA_UPSERT_BATCH_SIZE:-1000}"
 BENCHMARK_LIMIT="${BENCHMARK_LIMIT:-}"
 
 PREPARE_DIR="${PREPARE_DIR:-runs/benchmark_prepare/${RUN_ID}}"
@@ -61,6 +62,7 @@ prepare_args=(
   --db-path "$DB_PATH"
   --chroma-dir "$CHROMA_DIR"
   --collection-name "$COLLECTION_NAME"
+  --chroma-upsert-batch-size "$CHROMA_UPSERT_BATCH_SIZE"
   --no-dry-run
   --overwrite
 )

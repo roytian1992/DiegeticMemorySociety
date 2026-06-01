@@ -21,6 +21,7 @@ class ChromaMemoryIndexConfig:
     persist_dir: Path
     collection_name: str = "dms_retrieval_documents"
     reset: bool = False
+    upsert_batch_size: int = 1000
     embedding_dim: int = 384
     embedding_provider: str = "hash"
     embedding_model: str | None = None
@@ -59,11 +60,14 @@ def build_chroma_memory_index(config: ChromaMemoryIndexConfig) -> dict[str, Any]
     )
 
     records = get_retrieval_documents(config.db_path)
-    if records:
+    batch_size = max(1, int(config.upsert_batch_size))
+    batch_count = 0
+    for batch in _batches(records, batch_size):
+        batch_count += 1
         collection.upsert(
-            ids=[str(record["doc_id"]) for record in records],
-            documents=[str(record["text"]) for record in records],
-            metadatas=[_chroma_metadata(record) for record in records],
+            ids=[str(record["doc_id"]) for record in batch],
+            documents=[str(record["text"]) for record in batch],
+            metadatas=[_chroma_metadata(record) for record in batch],
         )
 
     return {
@@ -71,8 +75,14 @@ def build_chroma_memory_index(config: ChromaMemoryIndexConfig) -> dict[str, Any]
         "persist_dir": str(persist_dir),
         "collection_name": config.collection_name,
         "document_count": len(records),
+        "upsert_batch_size": batch_size,
+        "upsert_batch_count": batch_count,
         "embedding": embedding_function.config_summary(),
     }
+
+
+def _batches(records: list[dict[str, Any]], batch_size: int) -> list[list[dict[str, Any]]]:
+    return [records[index : index + batch_size] for index in range(0, len(records), batch_size)]
 
 
 def search_entity_memories(
