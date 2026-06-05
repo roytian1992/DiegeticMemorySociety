@@ -224,6 +224,56 @@ class FakeSceneEventClient:
         )
 
 
+class FakeTemporalExtractionClient:
+    """Deterministic test client for diegetic temporal extraction runner tests."""
+
+    provider = "fake"
+    model = "fake-temporal-extraction"
+
+    def complete(self, prompt: str) -> LLMResult:
+        unit_id = _extract_unit_id(prompt)
+        evidence = _extract_first_source_evidence(prompt)
+        payload = {
+            "unit_id": unit_id,
+            "temporal_events": [
+                {
+                    "event_id": f"{unit_id}:event_001",
+                    "summary": f"测试时间事件 {unit_id}",
+                    "participants": ["测试角色"],
+                    "location": "测试地点",
+                    "event_track": "plot",
+                    "event_time_mode": "present_scene",
+                    "story_time_hint": "当前场景",
+                    "granularity": "scene_relative",
+                    "evidence": evidence,
+                    "confidence": 0.8,
+                    "revealed_at_scene_id": unit_id,
+                }
+            ],
+            "temporal_relations": [],
+            "scene_temporal_index": {
+                "dominant_time_mode": "present_scene",
+                "scene_temporal_role": "plot_scene",
+                "relative_to_previous_scene": "after",
+                "absolute_time_hints": [],
+                "relative_time_hints": [],
+                "contains_flashback_or_recalled_past": False,
+                "contains_parallel_or_overlap": False,
+                "confidence": 0.7,
+                "evidence": evidence,
+            },
+            "temporal_warnings": [],
+        }
+        text = json.dumps(payload, ensure_ascii=False, indent=2)
+        return LLMResult(
+            text=text,
+            provider=self.provider,
+            model=self.model,
+            raw_response={"fake": True, "text": text},
+            usage={"prompt_chars": len(prompt), "completion_chars": len(text)},
+        )
+
+
 class FakeVisibilityNotesClient:
     """Deterministic test client for visibility notes runner tests."""
 
@@ -333,6 +383,114 @@ class FakeDurableRelationshipClient:
                 }
             ],
         }
+        text = json.dumps(payload, ensure_ascii=False, indent=2)
+        return LLMResult(
+            text=text,
+            provider=self.provider,
+            model=self.model,
+            raw_response={"fake": True, "text": text},
+            usage={"prompt_chars": len(prompt), "completion_chars": len(text)},
+        )
+
+
+class FakeReferenceItemClient:
+    """Deterministic test client for external reference item extraction tests."""
+
+    provider = "fake"
+    model = "fake-reference-items"
+
+    def complete(self, prompt: str) -> LLMResult:
+        chunk = _extract_last_json_object_after_marker(prompt, "# Reference Chunk")
+        if not isinstance(chunk, dict):
+            chunk = {}
+        chunk_id = str(chunk.get("chunk_id") or "ref_chunk_unknown")
+        content = "\n".join(
+            str(chunk.get(field) or "")
+            for field in ("title", "heading", "content")
+            if str(chunk.get(field) or "").strip()
+        )
+        items: list[dict[str, Any]] = []
+
+        if "550A" in content:
+            items.append(
+                {
+                    "item_type": "world_bible",
+                    "subject": "550A",
+                    "statement": "550A is an in-world technology or facility reference in the external material.",
+                    "evidence": "550A",
+                    "knowledge_scope": "author_only",
+                    "known_to": [],
+                    "available_from": "unknown",
+                    "timeline_hint": "",
+                    "authority": 0.7,
+                    "confidence": 0.8,
+                }
+            )
+        if "刘培强" in content:
+            items.append(
+                {
+                    "item_type": "character_profile",
+                    "subject": "刘培强",
+                    "statement": "刘培强 appears as a character profile anchor in the external material.",
+                    "evidence": "刘培强",
+                    "knowledge_scope": "author_only",
+                    "known_to": [],
+                    "available_from": "unknown",
+                    "timeline_hint": "",
+                    "authority": 0.7,
+                    "confidence": 0.8,
+                }
+            )
+        if "2044" in content:
+            items.append(
+                {
+                    "item_type": "timeline_doc",
+                    "subject": "2044",
+                    "statement": "The external material contains a 2044 timeline cue.",
+                    "evidence": "2044",
+                    "knowledge_scope": "author_only",
+                    "known_to": [],
+                    "available_from": "unknown",
+                    "timeline_hint": "2044",
+                    "authority": 0.7,
+                    "confidence": 0.8,
+                }
+            )
+        if "对白" in content or "台词" in content or "信息密度" in content:
+            evidence = _first_present_span(content, ("信息密度", "对白", "台词"))
+            items.append(
+                {
+                    "item_type": "style_guide",
+                    "subject": "对白",
+                    "statement": "External guidance mentions dialogue or information-density style.",
+                    "evidence": evidence,
+                    "knowledge_scope": "style_only",
+                    "known_to": [],
+                    "available_from": "story_start",
+                    "timeline_hint": "",
+                    "authority": 0.6,
+                    "confidence": 0.8,
+                }
+            )
+        if not items:
+            evidence = _extract_first_reference_evidence(chunk)
+            if evidence:
+                items.append(
+                    {
+                        "item_type": "author_note",
+                        "subject": str(chunk.get("heading") or chunk.get("title") or "外部资料"),
+                        "statement": "The external material contains author-facing reference notes.",
+                        "evidence": evidence,
+                        "knowledge_scope": "author_only",
+                        "known_to": [],
+                        "available_from": "unknown",
+                        "timeline_hint": "",
+                        "authority": 0.5,
+                        "confidence": 0.6,
+                    }
+                )
+
+        payload = {"chunk_id": chunk_id, "reference_items": items}
         text = json.dumps(payload, ensure_ascii=False, indent=2)
         return LLMResult(
             text=text,
@@ -533,6 +691,21 @@ def _extract_first_source_evidence(prompt: str) -> str:
             if value:
                 return value[: min(len(value), 24)]
     return _extract_unit_id(prompt)
+
+
+def _extract_first_reference_evidence(chunk: dict[str, Any]) -> str:
+    for field in ("content", "heading", "title"):
+        value = str(chunk.get(field) or "").strip()
+        if value:
+            return value[: min(len(value), 24)]
+    return ""
+
+
+def _first_present_span(text: str, candidates: tuple[str, ...]) -> str:
+    for candidate in candidates:
+        if candidate in text:
+            return candidate
+    return candidates[0] if candidates else ""
 
 
 def _extract_last_json_object_after_marker(prompt: str, marker: str) -> Any:

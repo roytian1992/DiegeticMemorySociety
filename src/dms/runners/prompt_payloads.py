@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from dms.chunking import NarrativeChunk
+from dms.narrative_units import narrative_unit_identity_from_record
 from dms.scripts.wandering_earth import ScriptScene
 
 
@@ -11,12 +12,10 @@ def narrative_unit_payload(scene: ScriptScene | NarrativeChunk) -> dict[str, Any
 
     unit_id = getattr(scene, "chunk_id", scene.scene_id)
     payload = {
-        "unit_id": unit_id,
-        "parent_unit_id": getattr(scene, "parent_unit_id", scene.scene_id),
-        "chunk_id": getattr(scene, "chunk_id", unit_id),
-        "chunk_index": getattr(scene, "chunk_index", 1),
-        "chunk_count": getattr(scene, "chunk_count", 1),
+        **narrative_unit_identity_from_record(scene),
         "order": scene.discourse_index,
+        "scene_id": scene.scene_id,
+        "scene_order": scene.source_record_id,
         "title": scene.title,
         "subtitle": scene.subtitle,
         "source_record_id": scene.source_record_id,
@@ -36,4 +35,6 @@ def narrative_unit_payload(scene: ScriptScene | NarrativeChunk) -> dict[str, Any
             "chunk_unit_count": scene.chunk_unit_count,
             "max_chunk_units": scene.max_chunk_units,
         }
+    payload["unit_id"] = unit_id
+    payload["chunk_id"] = getattr(scene, "chunk_id", unit_id)
     return payload

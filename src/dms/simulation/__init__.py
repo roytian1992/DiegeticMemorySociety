@@ -5,6 +5,11 @@ from dms.simulation.attribute_cards import (
     build_entity_attribute_cards,
     format_attribute_cards_markdown,
 )
+from dms.simulation.disposition import (
+    SceneDispositionNoteConfig,
+    build_scene_disposition_notes,
+    format_scene_disposition_notes_markdown,
+)
 from dms.simulation.formatting import format_social_simulation_markdown, format_social_simulation_writer_packet
 from dms.simulation.social import (
     SocialSimulationConfig,
@@ -14,9 +19,12 @@ from dms.simulation.verification import verify_social_simulation, verify_writer_
 
 __all__ = [
     "AttributeCardConfig",
+    "SceneDispositionNoteConfig",
     "SocialSimulationConfig",
     "build_entity_attribute_cards",
+    "build_scene_disposition_notes",
     "format_attribute_cards_markdown",
+    "format_scene_disposition_notes_markdown",
     "format_social_simulation_markdown",
     "format_social_simulation_writer_packet",
     "run_social_simulation",

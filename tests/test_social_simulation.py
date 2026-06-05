@@ -74,12 +74,15 @@ class FakeSocialSimulationClient:
 def test_run_social_simulation_from_attribute_cards(tmp_path: Path) -> None:
     cards_path = tmp_path / "attribute_cards.json"
     cards_path.write_text(json.dumps(_cards(), ensure_ascii=False), encoding="utf-8")
+    notes_path = tmp_path / "scene_disposition_notes.json"
+    notes_path.write_text(json.dumps(_scene_disposition_notes(), ensure_ascii=False), encoding="utf-8")
     client = FakeSocialSimulationClient()
 
     summary = run_social_simulation(
         SocialSimulationConfig(
             attribute_cards_path=cards_path,
             social_simulation_intent="刘培强和张鹏在返航途中互动。",
+            scene_disposition_notes_path=notes_path,
             output_dir=tmp_path / "simulation",
             overwrite=True,
         ),
@@ -88,6 +91,8 @@ def test_run_social_simulation_from_attribute_cards(tmp_path: Path) -> None:
 
     assert summary["character_simulation_count"] == 2
     assert summary["inputs"]["social_simulation_intent"] == "刘培强和张鹏在返航途中互动。"
+    assert summary["inputs"]["scene_disposition_note_count"] == 2
+    assert summary["scene_disposition_notes"][0]["scene_disposition_note"].startswith("张鹏在场")
     assert summary["inputs"]["source_isolation"]["target_scene_text_visible"] is False
     assert summary["inputs"]["source_isolation"]["writing_spec_visible"] is False
     assert len(summary["social_simulation"]["scene_beats"]) == 1
@@ -113,6 +118,8 @@ def test_run_social_simulation_from_attribute_cards(tmp_path: Path) -> None:
     assert "target scene text visible: no" in markdown
     assert "intent assumptions" in markdown
     assert "intent basis" in markdown
+    assert "## Scene Disposition Notes" in markdown
+    assert "张鹏在场" in markdown
     assert "dialogue posture" in markdown
     assert "## Algorithmic Social Plan" in markdown
     assert "## Verification" in markdown
@@ -120,10 +127,12 @@ def test_run_social_simulation_from_attribute_cards(tmp_path: Path) -> None:
     writer_packet = (tmp_path / "simulation" / "writer_packet.md").read_text(encoding="utf-8")
     assert "# Social Simulation Writer Packet" in writer_packet
     assert "target scene text visible: no" in writer_packet
+    assert "Scene disposition notes are behavior priors" in writer_packet
     assert "## Optional Interaction Functions" in writer_packet
     assert "posture only" in writer_packet
     for prompt in client.prompts:
         assert "social_simulation_intent" in prompt
+        assert "scene_disposition_note" in prompt
         assert '"writing_spec"' not in prompt
         assert "J20C返航途中穿越战区废墟时的紧张氛围" not in prompt
 
@@ -169,5 +178,20 @@ def _cards() -> list[dict]:
             "relationship_stances": [{"target": "刘培强", "stance": "提醒与照看", "status": "inferred", "refs": ["M1"]}],
             "hard_constraints": [],
             "simulation_risks": [],
+        },
+    ]
+
+
+def _scene_disposition_notes() -> list[dict]:
+    return [
+        {
+            "entity_id": "character_0011",
+            "canonical_name": "刘培强",
+            "scene_disposition_note": "张鹏在场会让刘培强的逞强短暂收敛，但不会让他完全放下嘴硬。",
+        },
+        {
+            "entity_id": "character_0017",
+            "canonical_name": "张鹏",
+            "scene_disposition_note": "张鹏在当前场景里更像压舱石，用务实提醒压住对方的慌乱。",
         },
     ]

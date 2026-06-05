@@ -133,6 +133,11 @@ def format_attribute_cards_markdown(summary: dict[str, Any]) -> str:
         _append_items(lines, "values or motivations", card.get("values_or_motivations"), "value")
         _append_relationships(lines, card.get("relationship_stances"))
         _append_items(lines, "behavior tendencies", card.get("behavior_tendencies"), "tendency")
+        author_profile_summary = card.get("author_profile_summary") or _compact_author_baseline(card.get("author_profile_baseline") or {})
+        if author_profile_summary:
+            lines.append("")
+            lines.append("author profile baseline:")
+            lines.append(f"- {author_profile_summary}")
         _append_constraints(lines, "hard constraints", card.get("hard_constraints"))
         _append_risks(lines, card.get("simulation_risks"))
         unsupported = card.get("uncertain_or_unsupported") or []
@@ -173,6 +178,7 @@ def _build_entity_context(packet: dict[str, Any], entity: dict[str, Any], *, max
         if str(memory.get("index")) in memory_indexes
     ][: max(max_memories, 0)]
     refs = _collect_references(packet, entity, memories)
+    character_reference_knowledge = _select_character_reference_knowledge(packet, entity)
     relations = [
         relation
         for relation in packet.get("relations") or []
@@ -181,6 +187,15 @@ def _build_entity_context(packet: dict[str, Any], entity: dict[str, Any], *, max
         or relation.get("source_name") == entity.get("canonical_name")
         or relation.get("target_name") == entity.get("canonical_name")
     ]
+    available_reference_ids = [ref.get("ref_id") for ref in refs]
+    available_reference_ids.extend(
+        item.get("ref_id")
+        for item in character_reference_knowledge
+        if item.get("ref_id")
+    )
+    has_author_profile = bool(entity.get("author_profile") or entity.get("initial_state") or entity.get("profile_policy"))
+    if has_author_profile:
+        available_reference_ids.append("AUTHOR_PROFILE")
     return {
         "prefix_boundary": packet.get("retrieval_boundary") or {},
         "prefix_boundary_label": _prefix_boundary_label(packet.get("retrieval_boundary") or {}),
@@ -188,11 +203,13 @@ def _build_entity_context(packet: dict[str, Any], entity: dict[str, Any], *, max
         "entity": entity,
         "relations": relations,
         "related_memories": memories,
+        "character_reference_knowledge": character_reference_knowledge,
         "references": refs,
         "instructions": {
             "status_labels": ["explicit", "inferred"],
             "available_memory_indexes": [memory.get("index") for memory in memories],
-            "available_reference_ids": [ref.get("ref_id") for ref in refs],
+            "available_reference_ids": available_reference_ids,
+            "author_profile_ref": "AUTHOR_PROFILE" if has_author_profile else "",
         },
     }
 
@@ -216,12 +233,44 @@ def _collect_references(packet: dict[str, Any], entity: dict[str, Any], memories
     return references
 
 
+def _select_character_reference_knowledge(packet: dict[str, Any], entity: dict[str, Any]) -> list[dict[str, Any]]:
+    entity_names = {
+        str(value).strip().lower()
+        for value in (entity.get("entity_id"), entity.get("canonical_name"), *(entity.get("aliases") or []))
+        if str(value or "").strip()
+    }
+    selected = []
+    for item in packet.get("character_reference_knowledge") or []:
+        if not isinstance(item, dict):
+            continue
+        known_to = {str(value).strip().lower() for value in item.get("known_to") or [] if str(value or "").strip()}
+        if "all" not in known_to and known_to and not known_to.intersection(entity_names):
+            continue
+        selected.append(
+            {
+                "ref_id": f"REF:{item.get('item_id')}",
+                "item_id": item.get("item_id"),
+                "item_type": item.get("item_type"),
+                "subject": item.get("subject"),
+                "statement": item.get("statement"),
+                "knowledge_scope": item.get("knowledge_scope"),
+                "known_to": item.get("known_to") or [],
+                "available_from": item.get("available_from"),
+            }
+        )
+    return selected
+
+
 def _normalize_card(data: Any, context: dict[str, Any]) -> dict[str, Any]:
     entity = context.get("entity") or {}
     card = dict(data) if isinstance(data, dict) else {}
     card.setdefault("entity_id", entity.get("entity_id"))
     card.setdefault("canonical_name", entity.get("canonical_name"))
     card.setdefault("entity_type", entity.get("entity_type"))
+    card.setdefault("author_profile_baseline", entity.get("author_profile") or {})
+    card.setdefault("author_initial_state", entity.get("initial_state") or {})
+    card.setdefault("author_profile_policy", entity.get("profile_policy") or {})
+    card.setdefault("author_profile_summary", entity.get("author_profile_summary") or "")
     card["prefix_boundary"] = context.get("prefix_boundary_label") or card.get("prefix_boundary") or ""
     legacy_constraints = card.get("simulation_constraints")
     if "hard_constraints" not in card and isinstance(legacy_constraints, list):
@@ -324,11 +373,46 @@ def _normalize_hard_constraint_wording(card: dict[str, Any]) -> None:
                 break
 
 
+def _compact_author_baseline(profile: dict[str, Any]) -> str:
+    if not isinstance(profile, dict):
+        return ""
+    parts: list[str] = []
+    for key in ("description", "role", "stable_traits", "speaking_style", "values_or_motivations", "behavior_constraints"):
+        value = _compact_value(profile.get(key), limit=4)
+        if value:
+            parts.append(f"{key}={value}")
+    return "；".join(parts)
+
+
+def _compact_value(value: Any, *, limit: int) -> str:
+    if value in (None, "", [], {}):
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        items = [item for item in (_compact_value(item, limit=limit) for item in value) if item]
+        return "、".join(items[:limit])
+    if isinstance(value, dict):
+        items = []
+        for key, item in value.items():
+            compact = _compact_value(item, limit=limit)
+            if compact:
+                items.append(f"{key}:{compact}")
+        return "、".join(items[:limit])
+    return str(value).strip()
+
+
 def _prefix_boundary_label(boundary: dict[str, Any]) -> str:
-    if boundary.get("before_scene_id"):
-        return f"before {boundary.get('before_scene_id')}"
+    unit_label = str(boundary.get("unit_label") or "scene")
+    if boundary.get("before_unit_id") or boundary.get("before_scene_id"):
+        unit_id = str(boundary.get("before_unit_id") or boundary.get("before_scene_id"))
+        if unit_id.lower().startswith(f"{unit_label.lower()}_"):
+            return f"before {unit_id}"
+        return f"before {unit_label} {unit_id}"
+    if boundary.get("before_unit_order") is not None:
+        return f"before {unit_label} order {boundary.get('before_unit_order')}"
     if boundary.get("before_scene_order") is not None:
-        return f"before scene order {boundary.get('before_scene_order')}"
+        return f"before {unit_label} order {boundary.get('before_scene_order')}"
     return ""
 
 

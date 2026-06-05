@@ -275,6 +275,12 @@ class HashEmbeddingFunction:
     def __call__(self, input: list[str]) -> list[list[float]]:  # noqa: A002 - Chroma API name.
         return [self._embed(text) for text in input]
 
+    def embed_documents(self, input: list[str]) -> list[list[float]]:  # noqa: A002 - Chroma API name.
+        return self(input)
+
+    def embed_query(self, input: list[str]) -> list[list[float]]:  # noqa: A002 - Chroma API name.
+        return self(input)
+
     def _embed(self, text: str) -> list[float]:
         vector = [0.0] * self.dim
         tokens = _tokens(text)
@@ -333,6 +339,12 @@ class OpenAICompatibleEmbeddingFunction:
             batch = texts[index : index + self.batch_size]
             embeddings.extend(self._embed_batch(batch, include_dimensions=True))
         return embeddings
+
+    def embed_documents(self, input: list[str]) -> list[list[float]]:  # noqa: A002 - Chroma API name.
+        return self(input)
+
+    def embed_query(self, input: list[str]) -> list[list[float]]:  # noqa: A002 - Chroma API name.
+        return self(input)
 
     def _embed_batch(self, texts: list[str], *, include_dimensions: bool) -> list[list[float]]:
         payload: dict[str, Any] = {"model": self.model_name, "input": texts}
@@ -418,7 +430,29 @@ def _memory_payload(db_path: str | Path, doc: dict[str, Any]) -> dict[str, Any]:
     with sqlite3.connect(str(db_path)) as conn:
         conn.row_factory = sqlite3.Row
         memory = conn.execute("SELECT * FROM episodic_memories WHERE memory_id = ?", (memory_id,)).fetchone()
-    return {"memory": dict(memory)} if memory else {}
+    if not memory:
+        return {}
+    payload = dict(memory)
+    raw = _json_loads(payload.get("raw_json"), default={})
+    payload["raw"] = raw
+    if isinstance(raw, dict):
+        payload["memory_temporal_scope"] = raw.get("memory_temporal_scope") or "temporal_episode"
+        payload["memory_temporal_scope_confidence"] = raw.get("memory_temporal_scope_confidence")
+        payload["memory_temporal_scope_reason"] = raw.get("memory_temporal_scope_reason")
+    else:
+        payload["memory_temporal_scope"] = "temporal_episode"
+        payload["memory_temporal_scope_confidence"] = None
+        payload["memory_temporal_scope_reason"] = None
+    return {"memory": payload}
+
+
+def _json_loads(value: Any, *, default: Any) -> Any:
+    if value is None:
+        return default
+    try:
+        return json.loads(str(value))
+    except json.JSONDecodeError:
+        return default
 
 
 def _import_chromadb():

@@ -136,6 +136,10 @@ def test_scene_ordered_pipeline_uses_author_entity_context_as_description_baseli
                         "entity_type": "character",
                         "aliases": ["Fake Char"],
                         "description": "作者预设的测试角色",
+                        "author_profile": {
+                            "stable_traits": ["稳定测试人格"],
+                            "speaking_style": ["简短"],
+                        },
                     }
                 ]
             },
@@ -166,6 +170,7 @@ def test_scene_ordered_pipeline_uses_author_entity_context_as_description_baseli
     assert len(fake) == 1
     assert fake[0]["author_description"] == "作者预设的测试角色"
     assert fake[0]["initial_description"] == "作者预设的测试角色"
+    assert fake[0]["author_profile"]["stable_traits"] == ["稳定测试人格"]
     assert "a trackable test character" in fake[0]["descriptions"]
 
 
@@ -193,6 +198,44 @@ def test_scene_ordered_pipeline_chunks_long_units_when_budget_is_small(tmp_path:
     assert all(record["chunk_unit_count"] <= 20 for record in manifest)
     assert manifest[0]["unit_id"] == "scene_0001_chunk_001"
     assert (output_root / DEBUG_EXTRACTIONS / "episodic_memories" / "inputs" / "scene_0001_chunk_001.json").is_file()
+
+
+def test_scene_ordered_pipeline_carries_configured_narrative_unit_label(tmp_path: Path) -> None:
+    output_root = tmp_path / "ordered_pipeline_chapter_units"
+
+    summary = run_scene_ordered_pipeline(
+        SceneOrderedPipelineConfig(
+            script_path=SCRIPT_PATH,
+            output_root=output_root,
+            limit=1,
+            dry_run=True,
+            unit_type="chapter",
+            unit_label="chapter",
+        ),
+        llm_clients=None,
+    )
+
+    assert summary["narrative_unit"] == {
+        "unit_type": "chapter",
+        "unit_label": "chapter",
+        "legacy_scene_id_compatibility": True,
+    }
+    manifest = [
+        json.loads(line)
+        for line in (output_root / "_debug" / "chunk_manifest.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert manifest[0]["scene_id"] == "scene_0001"
+    assert manifest[0]["unit_type"] == "chapter"
+    assert manifest[0]["unit_label"] == "chapter"
+    input_payload = json.loads(
+        (output_root / DEBUG_EXTRACTIONS / "scene_summary" / "inputs" / "scene_0001.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert input_payload["unit_id"] == "scene_0001"
+    assert input_payload["unit_type"] == "chapter"
+    assert input_payload["unit_label"] == "chapter"
+    assert input_payload["scene_id"] == "scene_0001"
 
 
 def test_scene_ordered_pipeline_extends_legacy_base_without_refinement_outputs(tmp_path: Path) -> None:

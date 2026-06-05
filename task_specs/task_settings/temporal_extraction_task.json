@@ -1,0 +1,23 @@
+{
+  "task": "temporal_extraction",
+  "prompt_id": "dms/temporal_extraction",
+  "task_name": "世界内时间线抽取",
+  "extraction_policy": [
+    "Every temporal event, time hint, and temporal relation must be supported by evidence from the current narrative-unit text.",
+    "Keep discourse order, story/world time, and reveal time separate.",
+    "Do not turn script chapter order into hard world-time evidence unless the text provides temporal wording.",
+    "Separate plot events, visual context events, forecasts, memories, and hypothetical events using event_track.",
+    "Extract a compact temporal layer, not a shot-by-shot action list; prefer 3-6 salient events and never emit more than 8 events or 8 relations for one unit.",
+    "For visual-only or subtitle-only montage scenes, emit context events rather than plot events.",
+    "For future predictions or plans, emit forecast events and anticipates/claims relations rather than forcing them into the main plot chain.",
+    "Mark recalled past events, narrated backstory, flashbacks, plans, forecasts, hypothetical events, montage, and parallel action explicitly.",
+    "For memory and forecast events, summarize the remembered or anticipated world event, not only the current speech act that reveals it.",
+    "Use relation_type=before as the preferred ordering relation; relation_type=after means source_event_id happens after target_event_id.",
+    "Evidence must be one compact verbatim source span from title, subtitle, or content; do not use explanatory paraphrase, ellipses, or stitched multi-span evidence.",
+    "absolute_time_hints, relative_time_hints, and temporal_warnings.evidence must cite one compact verbatim source span; if multiple cues exist, pick the clearest one and describe uncertainty in the warning detail.",
+    "If the input is Chinese, write natural-language output fields in Chinese except exact codes, acronyms, and official names.",
+    "Write all natural-language output values in the same language as the current narrative unit, except exact names, codes, and schema labels.",
+    "Assign lower confidence to inferred ordering, ambiguous time jumps, and relations that rely only on weak wording.",
+    "The output must be parseable JSON."
+  ]
+}

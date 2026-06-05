@@ -104,6 +104,7 @@ def get_entity_memories(
               m.evidence_end,
               m.parent_evidence_start,
               m.parent_evidence_end,
+              m.raw_json,
               l.link_role,
               l.entity_id,
               l.entity_name,
@@ -120,7 +121,7 @@ def get_entity_memories(
         if limit is not None:
             sql += " LIMIT ?"
             params.append(limit)
-        return [dict(row) for row in conn.execute(sql, params)]
+        return [_memory_row_payload(row) for row in conn.execute(sql, params)]
 
 
 def list_entities(
@@ -184,6 +185,15 @@ def resolve_entity_refs(
                     "first_seen_scene": candidate["first_seen_scene"],
                     "first_seen_order": candidate["first_seen_order"],
                     "mention_count": candidate["mention_count"],
+                    "initial_description": candidate.get("initial_description", ""),
+                    "author_description": candidate.get("author_description", ""),
+                    "descriptions": candidate.get("descriptions", []),
+                    "description_sources": candidate.get("description_sources", []),
+                    "author_profile": candidate.get("author_profile", {}),
+                    "initial_state": candidate.get("initial_state", {}),
+                    "profile_policy": candidate.get("profile_policy", {}),
+                    "profile_sources": candidate.get("profile_sources", []),
+                    "author_entity_ids": candidate.get("author_entity_ids", []),
                 }
             )
         scored.sort(
@@ -205,7 +215,7 @@ def get_memories_by_ids(db_path: str | Path, memory_ids: list[str]) -> list[dict
     placeholders = ", ".join("?" for _ in ordered_ids)
     with _connect(db_path) as conn:
         rows = {
-            str(row["memory_id"]): dict(row)
+            str(row["memory_id"]): _memory_row_payload(row)
             for row in conn.execute(
                 f"SELECT * FROM episodic_memories WHERE memory_id IN ({placeholders})",
                 ordered_ids,
@@ -277,6 +287,10 @@ def get_scene_metadata(db_path: str | Path, scene_ids: list[str]) -> dict[str, d
             payload["scene_tags"] = _json_loads(payload.pop("scene_tags_json", "[]"), default=[])
             payload["source"] = _json_loads(payload.pop("source_json", "{}"), default={})
             payload["raw"] = _json_loads(payload.pop("raw_json", "{}"), default={})
+            if isinstance(payload["source"], dict):
+                payload["unit_type"] = payload["source"].get("unit_type")
+                payload["unit_label"] = payload["source"].get("unit_label")
+                payload["unit_order"] = payload["source"].get("unit_order")
             rows[str(payload["scene_id"])] = payload
         return {scene_id: rows[scene_id] for scene_id in ordered_ids if scene_id in rows}
 
@@ -984,12 +998,39 @@ def _entity_payload(conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any
         payload["author_description"] = payload["raw"].get("author_description", "")
         payload["descriptions"] = payload["raw"].get("descriptions", [])
         payload["description_sources"] = payload["raw"].get("description_sources", [])
+        payload["author_profile"] = payload["raw"].get("author_profile", {})
+        payload["initial_state"] = payload["raw"].get("initial_state", {})
+        payload["profile_policy"] = payload["raw"].get("profile_policy", {})
+        payload["profile_sources"] = payload["raw"].get("profile_sources", [])
+        payload["author_entity_ids"] = payload["raw"].get("author_entity_ids", [])
     else:
         payload["initial_description"] = ""
         payload["author_description"] = ""
         payload["descriptions"] = []
         payload["description_sources"] = []
+        payload["author_profile"] = {}
+        payload["initial_state"] = {}
+        payload["profile_policy"] = {}
+        payload["profile_sources"] = []
+        payload["author_entity_ids"] = []
     payload["aliases"] = _aliases_for_entity(conn, str(payload["entity_id"]))
+    return payload
+
+
+def _memory_row_payload(row: sqlite3.Row) -> dict[str, Any]:
+    payload = dict(row)
+    raw = _json_loads(payload.pop("raw_json", "{}"), default={})
+    raw_payload = raw if isinstance(raw, dict) else {}
+    payload["raw"] = raw_payload
+    payload["memory_temporal_scope"] = raw_payload.get("memory_temporal_scope") or "temporal_episode"
+    payload["memory_temporal_scope_confidence"] = raw_payload.get("memory_temporal_scope_confidence")
+    payload["memory_temporal_scope_reason"] = raw_payload.get("memory_temporal_scope_reason")
+    payload["unit_id"] = raw_payload.get("unit_id") or raw_payload.get("chunk_id") or payload.get("parent_scene_id")
+    payload["unit_type"] = raw_payload.get("unit_type")
+    payload["unit_label"] = raw_payload.get("unit_label")
+    payload["parent_unit_id"] = raw_payload.get("parent_unit_id") or payload.get("parent_scene_id")
+    payload["parent_unit_type"] = raw_payload.get("parent_unit_type")
+    payload["parent_unit_label"] = raw_payload.get("parent_unit_label")
     return payload
 
 

@@ -8,9 +8,17 @@ from typing import Any
 
 from dms.config import build_openai_client_from_config, embedding_kwargs_from_config, load_local_config, redact_model_config
 from dms.evaluation import WritingEvaluationConfig, evaluate_writing
+from dms.narrative_units import DEFAULT_UNIT_LABEL, DEFAULT_UNIT_TYPE
 from dms.retrieval import MemoryPacketConfig, build_memory_packet, format_memory_packet_markdown
 from dms.scripts.wandering_earth import load_script_scenes
-from dms.simulation import AttributeCardConfig, SocialSimulationConfig, build_entity_attribute_cards, run_social_simulation
+from dms.simulation import (
+    AttributeCardConfig,
+    SceneDispositionNoteConfig,
+    SocialSimulationConfig,
+    build_entity_attribute_cards,
+    build_scene_disposition_notes,
+    run_social_simulation,
+)
 from dms.writing import SocialWritingGenerationConfig, generate_writing_with_social_simulation_client
 
 
@@ -27,11 +35,23 @@ class WritingE2EConfig:
     prompt_dir: Path = Path("task_specs/prompts")
     before_scene_id: str | None = None
     before_scene_order: int | None = None
+    unit_type: str = DEFAULT_UNIT_TYPE
+    unit_label: str = DEFAULT_UNIT_LABEL
     scene_top_k: int = 5
     entity_memory_top_k: int = 12
+    global_scope_memory_top_k: int = 8
     max_entity_memories_before_vector: int = 50
     entity_match_limit: int = 1
     collection_name: str = "dms_retrieval_documents"
+    include_reference_context: bool = False
+    reference_db_path: Path | None = None
+    reference_chroma_dir: Path | None = None
+    reference_collection_name: str = "dms_reference_documents"
+    reference_top_k: int = 6
+    reference_author_top_k: int = 6
+    reference_character_top_k: int = 6
+    reference_style_top_k: int = 4
+    reference_timeline_top_k: int = 4
     attribute_entity_types: tuple[str, ...] = ("character",)
     attribute_entity_names: tuple[str, ...] = ()
     max_memories_per_entity: int = 16
@@ -71,11 +91,23 @@ def run_writing_e2e(config: WritingE2EConfig) -> dict[str, Any]:
             writing_intent=config.writing_intent,
             before_scene_id=config.before_scene_id,
             before_scene_order=config.before_scene_order,
+            unit_type=config.unit_type,
+            unit_label=config.unit_label,
             scene_top_k=config.scene_top_k,
             entity_memory_top_k=config.entity_memory_top_k,
+            global_scope_memory_top_k=config.global_scope_memory_top_k,
             max_entity_memories_before_vector=config.max_entity_memories_before_vector,
             entity_match_limit=config.entity_match_limit,
             collection_name=config.collection_name,
+            include_reference_context=config.include_reference_context,
+            reference_db_path=config.reference_db_path,
+            reference_chroma_dir=config.reference_chroma_dir,
+            reference_collection_name=config.reference_collection_name,
+            reference_top_k=config.reference_top_k,
+            reference_author_top_k=config.reference_author_top_k,
+            reference_character_top_k=config.reference_character_top_k,
+            reference_style_top_k=config.reference_style_top_k,
+            reference_timeline_top_k=config.reference_timeline_top_k,
             **embedding_kwargs,
         )
     )
@@ -98,11 +130,27 @@ def run_writing_e2e(config: WritingE2EConfig) -> dict[str, Any]:
         llm_client=llm_client,
     )
 
+    disposition_notes_dir = output_dir / "scene_disposition_notes"
+    disposition_summary = build_scene_disposition_notes(
+        SceneDispositionNoteConfig(
+            attribute_cards_path=attribute_cards_dir / "attribute_cards.json",
+            output_dir=disposition_notes_dir,
+            social_simulation_intent=config.writing_intent,
+            memory_packet_path=memory_packet_json_path,
+            prompt_dir=config.prompt_dir,
+            entity_types=config.attribute_entity_types,
+            entity_names=config.attribute_entity_names,
+            overwrite=config.overwrite,
+        ),
+        llm_client=llm_client,
+    )
+
     social_simulation_dir = output_dir / "social_simulation"
     social_summary = run_social_simulation(
         SocialSimulationConfig(
             attribute_cards_path=attribute_cards_dir / "attribute_cards.json",
             social_simulation_intent=config.writing_intent,
+            scene_disposition_notes_path=disposition_notes_dir / "scene_disposition_notes.json",
             output_dir=social_simulation_dir,
             prompt_dir=config.prompt_dir,
             overwrite=config.overwrite,
@@ -175,9 +223,15 @@ def run_writing_e2e(config: WritingE2EConfig) -> dict[str, Any]:
         "inputs": {
             "db_path": str(config.db_path),
             "chroma_dir": str(config.chroma_dir),
+            "include_reference_context": config.include_reference_context,
+            "reference_db_path": str(config.reference_db_path) if config.reference_db_path else None,
+            "reference_chroma_dir": str(config.reference_chroma_dir) if config.reference_chroma_dir else None,
+            "reference_collection_name": config.reference_collection_name,
             "writing_intent": config.writing_intent,
             "before_scene_id": config.before_scene_id,
             "before_scene_order": config.before_scene_order,
+            "unit_type": config.unit_type,
+            "unit_label": config.unit_label,
             "previous_scene_context_path": str(config.previous_scene_context_path)
             if config.previous_scene_context_path
             else None,
@@ -195,6 +249,7 @@ def run_writing_e2e(config: WritingE2EConfig) -> dict[str, Any]:
             "memory_packet_json": str(memory_packet_json_path),
             "memory_packet_markdown": str(memory_packet_md_path),
             "attribute_cards_dir": str(attribute_cards_dir),
+            "scene_disposition_notes_dir": str(disposition_notes_dir),
             "social_simulation_dir": str(social_simulation_dir),
             "writing_dir": str(writing_dir),
             "evaluation_dir": str(output_dir / "evaluation") if evaluation_summary is not None else None,
@@ -204,7 +259,12 @@ def run_writing_e2e(config: WritingE2EConfig) -> dict[str, Any]:
             "retrieved_memories": len(memory_packet.get("episodic_memories") or []),
             "retrieved_relations": len(memory_packet.get("relations") or []),
             "related_scene_summaries": len(memory_packet.get("related_scene_summaries") or []),
+            "author_reference_context": len(memory_packet.get("author_reference_context") or []),
+            "character_reference_knowledge": len(memory_packet.get("character_reference_knowledge") or []),
+            "style_reference_context": len(memory_packet.get("style_reference_context") or []),
+            "timeline_reference_claims": len(memory_packet.get("timeline_reference_claims") or []),
             "attribute_cards": attribute_summary.get("card_count"),
+            "scene_disposition_notes": disposition_summary.get("note_count"),
             "character_simulations": social_summary.get("character_simulation_count"),
         },
         "writing": writing_summary,

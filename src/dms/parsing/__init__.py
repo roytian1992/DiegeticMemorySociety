@@ -9,6 +9,7 @@ from dms.parsing.json_output import (
     validate_scene_event_candidates,
     validate_scene_inventory,
     validate_scene_summary,
+    validate_temporal_extraction,
     validate_visibility_notes,
 )
 
@@ -21,5 +22,6 @@ __all__ = [
     "validate_scene_event_candidates",
     "validate_scene_inventory",
     "validate_scene_summary",
+    "validate_temporal_extraction",
     "validate_visibility_notes",
 ]

@@ -24,7 +24,13 @@ template: |
 
   # Evidence Rules
   - Use only the provided entity context.
-  - Every attribute must cite one or more provided memory indexes or reference ids.
+  - Entity Context may include entity.author_profile, entity.author_profile_summary, entity.initial_state, and entity.profile_policy. Treat these as author-provided baseline/profile guidance, not as screenplay memory evidence.
+  - Entity Context may include character_reference_knowledge. Treat these REF:* items as externally supplied reference knowledge that is visible to the character under its knowledge_scope/known_to policy, not as screenplay events.
+  - Author profile fields may seed stable traits, speaking style, values, initial state, or behavior constraints when they are directly provided. Mark them as explicit and cite "AUTHOR_PROFILE" in refs.
+  - Do not invent scene events, relationship changes, knowledge transfers, or current memories from author profile fields. Use memory indexes or reference ids for anything derived from screenplay text.
+  - Every attribute must cite one or more provided memory indexes, reference ids, REF:* ids, or AUTHOR_PROFILE.
+  - The only allowed non-memory refs are "AUTHOR_PROFILE" and provided REF:* ids. Use AUTHOR_PROFILE only for attributes directly copied or compactly paraphrased from author_profile/initial_state/profile_policy. Use REF:* only for claims grounded in character_reference_knowledge.
+  - Do not cite REF:* items for facts marked author_only or style_only; such facts should not appear in character_reference_knowledge.
   - Distinguish explicit facts from inferred traits.
   - Do not infer demographic facts such as exact age, birthplace, rank, family members, or profession unless the context explicitly supports them.
   - It is allowed to infer personality, speaking style, values, emotional tendencies, relationship stance, and behavior tendencies when multiple memories or dialogue cues support them.

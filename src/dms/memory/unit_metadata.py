@@ -2,10 +2,18 @@ from __future__ import annotations
 
 from typing import Any
 
+from dms.narrative_units import DEFAULT_UNIT_LABEL, DEFAULT_UNIT_TYPE
+
 
 def unit_metadata(unit_payload: dict[str, Any] | None, unit_id: str) -> dict[str, Any]:
     if not unit_payload:
         return {
+            "unit_type": DEFAULT_UNIT_TYPE,
+            "unit_label": DEFAULT_UNIT_LABEL,
+            "unit_order": None,
+            "parent_unit_type": DEFAULT_UNIT_TYPE,
+            "parent_unit_label": DEFAULT_UNIT_LABEL,
+            "parent_unit_order": None,
             "parent_unit_id": unit_id,
             "chunk_id": unit_id,
             "chunk_index": 1,
@@ -18,7 +26,15 @@ def unit_metadata(unit_payload: dict[str, Any] | None, unit_id: str) -> dict[str
         }
 
     source_span = unit_payload.get("source_span") if isinstance(unit_payload.get("source_span"), dict) else {}
+    unit_type = str(unit_payload.get("unit_type") or DEFAULT_UNIT_TYPE)
+    unit_label = str(unit_payload.get("unit_label") or unit_type)
     return {
+        "unit_type": unit_type,
+        "unit_label": unit_label,
+        "unit_order": optional_int(unit_payload.get("unit_order") or unit_payload.get("order")),
+        "parent_unit_type": str(unit_payload.get("parent_unit_type") or unit_type),
+        "parent_unit_label": str(unit_payload.get("parent_unit_label") or unit_label),
+        "parent_unit_order": optional_int(unit_payload.get("parent_unit_order") or unit_payload.get("unit_order")),
         "parent_unit_id": str(unit_payload.get("parent_unit_id") or source_span.get("parent_unit_id") or unit_id),
         "chunk_id": str(unit_payload.get("chunk_id") or unit_payload.get("unit_id") or unit_id),
         "chunk_index": int_or_default(unit_payload.get("chunk_index"), 1),

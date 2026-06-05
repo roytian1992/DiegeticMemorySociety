@@ -11,11 +11,21 @@ def test_load_wandering_earth_script_scenes() -> None:
 
     assert len(scenes) == 373
     assert scenes[0].scene_id == "scene_0001"
+    assert scenes[0].unit_type == "scene"
+    assert scenes[0].unit_label == "scene"
     assert scenes[0].raw_heading_number == 1
     assert scenes[0].interior_exterior == "INT"
     assert scenes[0].time_of_day == "日"
     assert "印度" in scenes[0].location_hint
     assert scenes[-1].source_record_id == 373
+
+
+def test_load_script_scenes_can_label_units_as_chapters() -> None:
+    scenes = load_script_scenes(SCRIPT_PATH, unit_type="Chapter", unit_label="chapter")
+
+    assert scenes[0].scene_id == "scene_0001"
+    assert scenes[0].unit_type == "chapter"
+    assert scenes[0].unit_label == "chapter"
 
 
 def test_write_units_and_summary(tmp_path: Path) -> None:

@@ -58,6 +58,13 @@ class FakeBenchmarkClient:
                 "uncertain_or_unsupported": [],
             }
             text = json.dumps(payload, ensure_ascii=False)
+        elif "Write one compact scene disposition note" in prompt:
+            payload = {
+                "entity_id": "character_0001",
+                "canonical_name": "刘培强",
+                "scene_disposition_note": "当前返航互动会让刘培强的回避压力更外显，但仍应压在动作里。",
+            }
+            text = json.dumps(payload, ensure_ascii=False)
         elif "Simulate how the target character" in prompt:
             payload = {
                 "character": "刘培强",
@@ -244,12 +251,22 @@ writing_llm:
     ).is_file()
     assert (tmp_path / "bench" / "targets" / "scene_0005" / "social_simulation" / "social_simulation.md").is_file()
     assert (tmp_path / "bench" / "targets" / "scene_0005" / "social_simulation" / "writer_packet.md").is_file()
+    assert (tmp_path / "bench" / "targets" / "scene_0005" / "scene_disposition_notes" / "scene_disposition_notes.md").is_file()
+    assert target_summary["counts"]["scene_disposition_notes"] == 1
+    assert target_summary["paths"]["scene_disposition_notes"].endswith("scene_disposition_notes/scene_disposition_notes.md")
+    disposition_summary = json.loads(
+        (tmp_path / "bench" / "targets" / "scene_0005" / "scene_disposition_notes" / "summary.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert disposition_summary["inputs"]["memory_packet_path"].endswith("memory_packet.json")
     social_summary = json.loads(
         (tmp_path / "bench" / "targets" / "scene_0005" / "social_simulation" / "summary.json").read_text(
             encoding="utf-8"
         )
     )
     assert social_summary["inputs"]["social_simulation_intent"] == "刘培强和张鹏在J20C返航途中。"
+    assert social_summary["inputs"]["scene_disposition_note_count"] == 1
     assert social_summary["inputs"]["source_isolation"]["target_scene_text_visible"] is False
     assert social_summary["inputs"]["source_isolation"]["writing_spec_visible"] is False
     assert (tmp_path / "bench" / "targets" / "scene_0005" / "writing" / "previous_scene_context.md").is_file()

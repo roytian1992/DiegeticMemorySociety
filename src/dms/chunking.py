@@ -60,6 +60,8 @@ class NarrativeChunk:
     source_sha256: str
     chunk_unit_count: int
     max_chunk_units: int
+    unit_type: str = "scene"
+    unit_label: str = "scene"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -131,6 +133,8 @@ def _chunk(
         source_sha256=source_sha256,
         chunk_unit_count=chunk_unit_count(content),
         max_chunk_units=max_chunk_units,
+        unit_type=scene.unit_type,
+        unit_label=scene.unit_label,
     )
 
 

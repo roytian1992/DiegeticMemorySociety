@@ -12,6 +12,7 @@ from dms.config import build_openai_client_from_config, embedding_kwargs_from_co
 from dms.evaluation import WritingEvaluationConfig, build_scene_eligibility_splits, evaluate_writing
 from dms.intent_levels import normalize_intent_level
 from dms.llm import LLMClient, LLMResult
+from dms.narrative_units import DEFAULT_UNIT_LABEL, DEFAULT_UNIT_TYPE
 from dms.parsing import extract_json_value
 from dms.progress import print_progress
 from dms.prompts import YAMLPromptLoader
@@ -19,7 +20,14 @@ from dms.retrieval import MemoryPacketConfig, build_memory_packet, format_memory
 from dms.runners import SceneOrderedPipelineConfig, run_scene_ordered_pipeline
 from dms.runners.scene_ordered_pipeline import ALL_TASKS
 from dms.scripts.wandering_earth import ScriptScene, load_script_scenes
-from dms.simulation import AttributeCardConfig, SocialSimulationConfig, build_entity_attribute_cards, run_social_simulation
+from dms.simulation import (
+    AttributeCardConfig,
+    SceneDispositionNoteConfig,
+    SocialSimulationConfig,
+    build_entity_attribute_cards,
+    build_scene_disposition_notes,
+    run_social_simulation,
+)
 from dms.storage import AssetStoreImportConfig, ChromaMemoryIndexConfig, build_chroma_memory_index, import_run_assets
 from dms.writing import (
     SocialWritingGenerationConfig,
@@ -43,6 +51,8 @@ class WritingBenchmarkPrepareConfig:
     limit: int | None = None
     scene_task_concurrency: int = 3
     max_chunk_units: int = 800
+    unit_type: str = DEFAULT_UNIT_TYPE
+    unit_label: str = DEFAULT_UNIT_LABEL
     db_path: Path | None = None
     chroma_dir: Path | None = None
     collection_name: str = "dms_retrieval_documents"
@@ -78,8 +88,20 @@ class WritingBenchmarkRunConfig:
     evaluation_intent_level: str = "writing_spec"
     scene_top_k: int = 5
     entity_memory_top_k: int = 12
+    global_scope_memory_top_k: int = 8
     max_entity_memories_before_vector: int = 50
     entity_match_limit: int = 1
+    include_reference_context: bool = False
+    reference_db_path: Path | None = None
+    reference_chroma_dir: Path | None = None
+    reference_collection_name: str = "dms_reference_documents"
+    reference_top_k: int = 6
+    reference_author_top_k: int = 6
+    reference_character_top_k: int = 6
+    reference_style_top_k: int = 4
+    reference_timeline_top_k: int = 4
+    unit_type: str = DEFAULT_UNIT_TYPE
+    unit_label: str = DEFAULT_UNIT_LABEL
     attribute_entity_types: tuple[str, ...] = ("character",)
     attribute_entity_names: tuple[str, ...] = ()
     max_memories_per_entity: int = 16
@@ -131,6 +153,8 @@ def prepare_writing_benchmark_assets(config: WritingBenchmarkPrepareConfig) -> d
                 overwrite=config.overwrite,
                 scene_task_concurrency=config.scene_task_concurrency,
                 max_chunk_units=config.max_chunk_units,
+                unit_type=config.unit_type,
+                unit_label=config.unit_label,
             ),
             llm_clients=llm_clients,
         )
@@ -167,6 +191,8 @@ def prepare_writing_benchmark_assets(config: WritingBenchmarkPrepareConfig) -> d
             "start": config.start,
             "limit": limit,
             "run_extraction": config.run_extraction,
+            "unit_type": config.unit_type,
+            "unit_label": config.unit_label,
         },
         "paths": {
             "output_dir": str(output_dir),
@@ -318,7 +344,7 @@ def _run_one_writing_target(
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     intents_dir = output_dir / "intent"
-    print_progress("writing_target:stage", 0, 8, detail=f"scene={scene.scene_id} stage=start")
+    print_progress("writing_target:stage", 0, 9, detail=f"scene={scene.scene_id} stage=start")
     social_simulation_intent = _extract_intent(
         scene,
         level="social_simulation_intent",
@@ -329,7 +355,7 @@ def _run_one_writing_target(
         llm_client=llm_client,
         output_key="social_simulation_intent",
     )
-    print_progress("writing_target:stage", 1, 8, detail=f"scene={scene.scene_id} stage=social_simulation_intent")
+    print_progress("writing_target:stage", 1, 9, detail=f"scene={scene.scene_id} stage=social_simulation_intent")
     writing_intent = _extract_intent(
         scene,
         level="writing_intent",
@@ -340,7 +366,7 @@ def _run_one_writing_target(
         llm_client=llm_client,
         output_key="writing_intent",
     )
-    print_progress("writing_target:stage", 2, 8, detail=f"scene={scene.scene_id} stage=writing_intent")
+    print_progress("writing_target:stage", 2, 9, detail=f"scene={scene.scene_id} stage=writing_intent")
     writing_spec = _extract_intent(
         scene,
         level="writing_spec",
@@ -352,7 +378,7 @@ def _run_one_writing_target(
         output_key="writing_spec",
         output_aliases=("reference_scene_spec",),
     )
-    print_progress("writing_target:stage", 3, 8, detail=f"scene={scene.scene_id} stage=writing_spec")
+    print_progress("writing_target:stage", 3, 9, detail=f"scene={scene.scene_id} stage=writing_spec")
     intents = {
         "social_simulation_intent": social_simulation_intent,
         "writing_intent": writing_intent,
@@ -397,11 +423,23 @@ def _run_one_writing_target(
             chroma_dir=config.chroma_dir,
             writing_intent=memory_intent,
             before_scene_id=scene.scene_id,
+            unit_type=config.unit_type,
+            unit_label=config.unit_label,
             scene_top_k=config.scene_top_k,
             entity_memory_top_k=config.entity_memory_top_k,
+            global_scope_memory_top_k=config.global_scope_memory_top_k,
             max_entity_memories_before_vector=config.max_entity_memories_before_vector,
             entity_match_limit=config.entity_match_limit,
             collection_name=config.collection_name,
+            include_reference_context=config.include_reference_context,
+            reference_db_path=config.reference_db_path,
+            reference_chroma_dir=config.reference_chroma_dir,
+            reference_collection_name=config.reference_collection_name,
+            reference_top_k=config.reference_top_k,
+            reference_author_top_k=config.reference_author_top_k,
+            reference_character_top_k=config.reference_character_top_k,
+            reference_style_top_k=config.reference_style_top_k,
+            reference_timeline_top_k=config.reference_timeline_top_k,
             **embedding_kwargs,
         )
     )
@@ -412,7 +450,7 @@ def _run_one_writing_target(
     print_progress(
         "writing_target:stage",
         4,
-        8,
+        9,
         detail=(
             f"scene={scene.scene_id} stage=memory_packet entities={len(memory_packet.get('entities') or [])} "
             f"memories={len(memory_packet.get('episodic_memories') or [])}"
@@ -435,8 +473,29 @@ def _run_one_writing_target(
     print_progress(
         "writing_target:stage",
         5,
-        8,
+        9,
         detail=f"scene={scene.scene_id} stage=attribute_cards cards={attribute_summary.get('card_count')}",
+    )
+
+    disposition_dir = output_dir / "scene_disposition_notes"
+    disposition_summary = build_scene_disposition_notes(
+        SceneDispositionNoteConfig(
+            attribute_cards_path=attribute_cards_dir / "attribute_cards.json",
+            output_dir=disposition_dir,
+            social_simulation_intent=social_intent,
+            memory_packet_path=memory_json,
+            prompt_dir=config.prompt_dir,
+            entity_types=config.attribute_entity_types,
+            entity_names=config.attribute_entity_names,
+            overwrite=True,
+        ),
+        llm_client=llm_client,
+    )
+    print_progress(
+        "writing_target:stage",
+        6,
+        9,
+        detail=f"scene={scene.scene_id} stage=scene_disposition_notes notes={disposition_summary.get('note_count')}",
     )
 
     social_dir = output_dir / "social_simulation"
@@ -444,6 +503,7 @@ def _run_one_writing_target(
         SocialSimulationConfig(
             attribute_cards_path=attribute_cards_dir / "attribute_cards.json",
             social_simulation_intent=social_intent,
+            scene_disposition_notes_path=disposition_dir / "scene_disposition_notes.json",
             output_dir=social_dir,
             prompt_dir=config.prompt_dir,
             overwrite=True,
@@ -452,8 +512,8 @@ def _run_one_writing_target(
     )
     print_progress(
         "writing_target:stage",
-        6,
-        8,
+        7,
+        9,
         detail=f"scene={scene.scene_id} stage=social_simulation characters={social_summary.get('character_simulation_count')}",
     )
 
@@ -487,8 +547,8 @@ def _run_one_writing_target(
     )
     print_progress(
         "writing_target:stage",
-        7,
         8,
+        9,
         detail=f"scene={scene.scene_id} stage=writing chars={writing_summary.get('output', {}).get('body_chars')}",
     )
 
@@ -505,7 +565,7 @@ def _run_one_writing_target(
         ),
         llm_client=llm_client,
     )
-    print_progress("writing_target:stage", 8, 8, detail=f"scene={scene.scene_id} stage=evaluation")
+    print_progress("writing_target:stage", 9, 9, detail=f"scene={scene.scene_id} stage=evaluation")
 
     target_summary.update(
         {
@@ -521,7 +581,12 @@ def _run_one_writing_target(
                 "retrieved_memories": len(memory_packet.get("episodic_memories") or []),
                 "retrieved_relations": len(memory_packet.get("relations") or []),
                 "related_scene_summaries": len(memory_packet.get("related_scene_summaries") or []),
+                "author_reference_context": len(memory_packet.get("author_reference_context") or []),
+                "character_reference_knowledge": len(memory_packet.get("character_reference_knowledge") or []),
+                "style_reference_context": len(memory_packet.get("style_reference_context") or []),
+                "timeline_reference_claims": len(memory_packet.get("timeline_reference_claims") or []),
                 "attribute_cards": attribute_summary.get("card_count"),
+                "scene_disposition_notes": disposition_summary.get("note_count"),
                 "character_simulations": social_summary.get("character_simulation_count"),
             },
             "metrics": _extract_metrics(evaluation_summary),
@@ -530,6 +595,7 @@ def _run_one_writing_target(
                 "memory_packet_json": str(memory_json),
                 "memory_packet_markdown": str(memory_md),
                 "attribute_cards": str(attribute_cards_dir / "attribute_cards.md"),
+                "scene_disposition_notes": str(disposition_dir / "scene_disposition_notes.md"),
                 "social_simulation": str(social_dir / "writer_packet.md"),
                 "draft": str(writing_dir / "draft.md"),
                 "evaluation": str(evaluation_dir / "summary.json"),

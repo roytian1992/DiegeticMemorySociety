@@ -333,6 +333,99 @@ def validate_visibility_notes(data: Any, *, expected_scene_id: str | None = None
     return errors
 
 
+def validate_temporal_extraction(data: Any, *, expected_scene_id: str | None = None) -> list[str]:
+    errors: list[str] = []
+    if not isinstance(data, dict):
+        return ["temporal extraction output must be a JSON object"]
+
+    _validate_unit_id(errors, data, expected_scene_id)
+
+    for key in ("temporal_events", "temporal_relations"):
+        if key not in data:
+            errors.append(f"{key} is required")
+        elif not isinstance(data.get(key), list):
+            errors.append(f"{key} must be a list")
+    if "temporal_warnings" in data and not isinstance(data.get("temporal_warnings"), list):
+        errors.append("temporal_warnings must be a list")
+
+    scene_index = data.get("scene_temporal_index")
+    if scene_index is not None and not isinstance(scene_index, dict):
+        errors.append("scene_temporal_index must be an object when present")
+
+    for index, item in enumerate(
+        data.get("temporal_events") if isinstance(data.get("temporal_events"), list) else [],
+        start=1,
+    ):
+        if not isinstance(item, dict):
+            errors.append(f"temporal_events[{index}] must be an object")
+            continue
+        _require_string_fields(
+            errors,
+            item,
+            "temporal_events",
+            index,
+            ("event_id", "summary", "event_time_mode", "evidence"),
+        )
+        _validate_optional_enum(
+            errors,
+            item,
+            "temporal_events",
+            index,
+            "event_track",
+            {"plot", "context", "forecast", "memory", "hypothetical", "unknown"},
+        )
+        _validate_optional_enum(
+            errors,
+            item,
+            "temporal_events",
+            index,
+            "event_time_mode",
+            {"present_scene", "past_recalled", "future_anticipated", "habitual", "hypothetical", "uncertain"},
+        )
+        if not isinstance(item.get("participants"), list):
+            errors.append(f"temporal_events[{index}].participants must be a list")
+        if "confidence" in item and not isinstance(item.get("confidence"), (int, float, str)):
+            errors.append(f"temporal_events[{index}].confidence must be numeric or string")
+
+    for index, item in enumerate(
+        data.get("temporal_relations") if isinstance(data.get("temporal_relations"), list) else [],
+        start=1,
+    ):
+        if not isinstance(item, dict):
+            errors.append(f"temporal_relations[{index}] must be an object")
+            continue
+        _require_string_fields(
+            errors,
+            item,
+            "temporal_relations",
+            index,
+            ("source_event_id", "target_event_id", "relation_type", "evidence"),
+        )
+        _validate_optional_enum(
+            errors,
+            item,
+            "temporal_relations",
+            index,
+            "relation_type",
+            {
+                "before",
+                "after",
+                "overlaps",
+                "same_time",
+                "contains",
+                "causes",
+                "anticipates",
+                "claims",
+                "reveals_past",
+                "uncertain",
+            },
+        )
+        if "confidence" in item and not isinstance(item.get("confidence"), (int, float, str)):
+            errors.append(f"temporal_relations[{index}].confidence must be numeric or string")
+
+    return errors
+
+
 def validate_episodic_memories(
     data: Any,
     *,
@@ -472,6 +565,22 @@ def _validate_entity_type(
     if not is_supported_entity_type_label(value):
         allowed = ", ".join(sorted(ALLOWED_ENTITY_TYPES))
         errors.append(f"{label}[{index}].{field} must be one of: {allowed}")
+
+
+def _validate_optional_enum(
+    errors: list[str],
+    item: dict[str, Any],
+    label: str,
+    index: int,
+    field: str,
+    allowed: set[str],
+) -> None:
+    value = item.get(field)
+    if value is None:
+        return
+    if not isinstance(value, str) or value not in allowed:
+        allowed_text = ", ".join(sorted(allowed))
+        errors.append(f"{label}[{index}].{field} must be one of: {allowed_text}")
 
 
 def _validate_unit_id(errors: list[str], data: dict[str, Any], expected_unit_id: str | None) -> None:

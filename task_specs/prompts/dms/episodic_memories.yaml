@@ -44,7 +44,8 @@ template: |
         "memory_id_hint": "string",
         "sequence_index": 1,
         "timeline_label": "string",
-            "memory_type": "observation | action | dialogue | decision | state_change | knowledge_transfer | relationship_change | setting | other",
+        "memory_type": "observation | action | dialogue | decision | state_change | knowledge_transfer | relationship_change | setting | other",
+        "memory_temporal_scope": "temporal_episode | atemporal_fact | durable_state | uncertain",
         "summary": "string",
         "evidence": "string",
         "entity_links": [
@@ -63,6 +64,11 @@ template: |
   - unit_id must match the input narrative unit.
   - sequence_index starts at 1 and follows the order of the current unit.
   - timeline_label should use an explicit time if available; otherwise use the narrative unit order.
+  - memory_temporal_scope separates story-time-bound episodes from facts that only need reveal-time visibility.
+  - Use temporal_episode for concrete actions, utterances, reveals, local observations, and ordered scene events.
+  - Use atemporal_fact for world rules, technical principles, stable setting facts, definitions, and background facts that do not depend on event order after they are revealed.
+  - Use durable_state for stable roles, beliefs, plans, obligations, relationships, or entity states that persist until updated.
+  - Use uncertain if the memory might require story-time filtering but the source is ambiguous.
   - Extract only memories that can affect later writing continuity, entity state, entity knowledge, or durable relationships.
   - Prefer 3 to 8 episodic_memories for an ordinary unit. Use fewer when the unit is mostly visual/atmospheric description.
   - Do not create separate episodic_memories for open questions; open questions are already handled by scene context.

@@ -58,6 +58,27 @@ def test_yaml_prompt_loader_renders_scene_summary_prompt() -> None:
     assert "scene_0001" in rendered
 
 
+def test_yaml_prompt_loader_renders_reference_items_prompt() -> None:
+    loader = YAMLPromptLoader("task_specs/prompts")
+    rendered = loader.render(
+        "dms/reference_items",
+        task_values={
+            "reference_chunk_json": {
+                "chunk_id": "ref_doc_0001_chunk_0001",
+                "title": "设定笔记",
+                "content": "550A位于数字生命研究室。",
+            }
+        },
+        static_values={"extraction_policy": "Every item needs evidence."},
+    )
+
+    assert "Extract reusable external reference items" in rendered
+    assert '"reference_items": [' in rendered
+    assert "knowledge_scope=author_only" in rendered
+    assert "Every item needs evidence" in rendered
+    assert "ref_doc_0001_chunk_0001" in rendered
+
+
 def test_yaml_prompt_loader_renders_kg_entity_refinement_prompt_without_full_text() -> None:
     loader = YAMLPromptLoader("task_specs/prompts")
     rendered = loader.render(
@@ -283,12 +304,22 @@ def test_yaml_prompt_loader_renders_entity_attribute_card_prompt() -> None:
 
 def test_yaml_prompt_loader_renders_social_simulation_prompts() -> None:
     loader = YAMLPromptLoader("task_specs/prompts")
+    disposition_prompt = loader.render(
+        "dms/scene_disposition_note",
+        task_values={
+            "disposition_context_json": {
+                "social_simulation_intent": "写一段返航互动。",
+                "target_card": {"canonical_name": "刘培强"},
+            }
+        },
+    )
     character_prompt = loader.render(
         "dms/character_social_simulation",
         task_values={
             "simulation_context_json": {
                 "writing_intent": "写一段返航互动。",
                 "target_card": {"canonical_name": "刘培强"},
+                "relevant_memory_notes": ["M1: 刘培强返航途中情绪焦躁"],
             }
         },
     )
@@ -302,6 +333,11 @@ def test_yaml_prompt_loader_renders_social_simulation_prompts() -> None:
         },
     )
 
+    assert "Write one compact scene disposition note" in disposition_prompt
+    assert "Use relevant_memory_notes when present" in disposition_prompt
+    assert "Return exactly these three fields" in disposition_prompt
+    assert '"scene_disposition_note": "string"' in disposition_prompt
+    assert "刘培强" in disposition_prompt
     assert "Simulate how the target character" in character_prompt
     assert '"likely_internal_state"' in character_prompt
     assert '"intent_assumptions"' in character_prompt

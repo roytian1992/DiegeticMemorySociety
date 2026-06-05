@@ -29,7 +29,7 @@ template: |
   Fill the entity mention JSON for the current narrative unit.
 
   # Source
-  Base mentions, attributes, and evidence on the current narrative-unit text. Use prior entity context for alias alignment and author-defined baseline descriptions.
+  Base mentions, attributes, and evidence on the current narrative-unit text. Use prior entity context for alias alignment and author-defined baseline descriptions/profiles.
 
   # What To Capture
   Capture explicit, important entity mentions that may need to be tracked later for writing continuity. Use only these persistent entity types: character, group, organization, location, object, concept, and occasion.
@@ -84,7 +84,8 @@ template: |
   - canonical_hint should contain the best supported canonical name only when that name appears in the current unit or prior entity context; otherwise use an empty string.
   - description should be a concise entity-level description that could help identify the entity across later units, such as who or what it is in the story world. It should be stable enough to reuse outside this unit when supported.
   - If prior entity context contains an author-defined description for the same entity, treat it as the baseline description. Do not overwrite or contradict it.
-  - The current unit may add a supplemental description only when the text provides new evidence-supported identity information. Do not copy author-only descriptions into evidence fields.
+  - If prior entity context contains author_profile, initial_state, or profile_policy, use it only to keep canonical identity, alias alignment, and baseline interpretation stable.
+  - The current unit may add a supplemental description only when the text provides new evidence-supported identity information. Do not copy author-only descriptions, traits, personality, speaking style, or constraints into evidence fields.
   - role_in_unit should describe the entity's local role in this narrative unit, such as speaker, observer, device, vehicle, location, document, concept, occasion, or deadline.
   - attributes_or_state should capture stated identity, status, ownership, or visible attributes.
   - evidence must be a short verbatim span from the input narrative unit.

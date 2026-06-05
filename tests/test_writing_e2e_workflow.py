@@ -38,6 +38,15 @@ class FakeConfigClient:
                 },
                 ensure_ascii=False,
             )
+        elif "Write one compact scene disposition note" in prompt:
+            text = json.dumps(
+                {
+                    "entity_id": "character_0001",
+                    "canonical_name": "刘培强",
+                    "scene_disposition_note": "当前返航请求会让刘培强的焦躁更外显，但仍应压在动作和短促反应里。",
+                },
+                ensure_ascii=False,
+            )
         elif "Simulate how the target character" in prompt:
             text = json.dumps(
                 {
@@ -181,8 +190,14 @@ writing_llm:
     assert summary["evaluation"]["inputs"]["generated_chars"] == len(draft)
     assert (tmp_path / "e2e" / "memory_packet.md").is_file()
     assert (tmp_path / "e2e" / "attribute_cards" / "attribute_cards.md").is_file()
+    assert (tmp_path / "e2e" / "scene_disposition_notes" / "scene_disposition_notes.md").is_file()
+    disposition_summary = json.loads(
+        (tmp_path / "e2e" / "scene_disposition_notes" / "summary.json").read_text(encoding="utf-8")
+    )
+    assert disposition_summary["inputs"]["memory_packet_path"].endswith("memory_packet.json")
     assert (tmp_path / "e2e" / "social_simulation" / "social_simulation.md").is_file()
     assert (tmp_path / "e2e" / "social_simulation" / "writer_packet.md").is_file()
+    assert summary["counts"]["scene_disposition_notes"] == 1
     assert summary["writing"]["inputs"]["social_simulation_path"].endswith("social_simulation/writer_packet.md")
     assert json.loads((tmp_path / "e2e" / "summary.json").read_text(encoding="utf-8"))["model_config"]["writing_llm"][
         "api_key"

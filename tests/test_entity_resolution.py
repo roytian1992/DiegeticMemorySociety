@@ -205,17 +205,30 @@ def test_entity_resolution_keeps_author_description_as_baseline(tmp_path: Path) 
                 "entity_type": "character",
                 "aliases": ["培强"],
                 "author_description": "作者设定里的年轻预备航天员",
+                "author_profile": {
+                    "stable_traits": ["容易逃避压力", "重视承诺"],
+                    "speaking_style": ["短句", "情绪压着说"],
+                },
+                "initial_state": {"beliefs": ["太阳危机会改变一切"]},
+                "profile_policy": {"priority": "author_locked", "visibility": "author_guidance"},
             }
         ],
     )
     entities = [json.loads(line) for line in (output_dir / "entities.jsonl").read_text(encoding="utf-8").splitlines()]
+    summary = json.loads((output_dir / "summary.json").read_text(encoding="utf-8"))
 
     liu = [entity for entity in entities if entity["canonical_name"] == "刘培强"]
     assert len(liu) == 1
     assert liu[0]["author_description"] == "作者设定里的年轻预备航天员"
     assert liu[0]["initial_description"] == "作者设定里的年轻预备航天员"
+    assert liu[0]["author_profile"]["stable_traits"] == ["容易逃避压力", "重视承诺"]
+    assert liu[0]["author_profile"]["speaking_style"] == ["短句", "情绪压着说"]
+    assert liu[0]["initial_state"]["beliefs"] == ["太阳危机会改变一切"]
+    assert liu[0]["profile_policy"]["priority"] == "author_locked"
+    assert liu[0]["author_entity_ids"] == ["author_character_0001"]
     assert "将前往月球受训的人" in liu[0]["descriptions"]
     assert liu[0]["description_sources"][0]["source"] == "author_defined"
+    assert summary["author_profile_count"] == 1
 
 
 def test_entity_resolution_merges_role_modifier_and_alnum_code_aliases(tmp_path: Path) -> None:

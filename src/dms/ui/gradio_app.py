@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-import gradio as gr
 import pandas as pd
 
 from dms.benchmark import WritingBenchmarkRunConfig, run_writing_benchmark
@@ -42,7 +41,12 @@ def build_app(
     collection_name: str = DEFAULT_COLLECTION,
     benchmark_dir: Path = DEFAULT_BENCHMARK_DIR,
     model_config: Path = Path("configs/local_config.yaml"),
-) -> gr.Blocks:
+) -> Any:
+    try:
+        import gradio as gr
+    except ImportError as exc:
+        raise ImportError("Gradio is required to launch the DMS UI. Install the optional gradio dependency.") from exc
+
     scenes = load_script_scenes(script_path)
     scene_choices = [f"{scene.scene_id} | {scene.title}" for scene in scenes]
 

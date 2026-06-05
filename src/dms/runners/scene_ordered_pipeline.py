@@ -27,6 +27,7 @@ from dms.memory import (
     build_scene_inventory_memory,
     build_scene_summary_memory,
 )
+from dms.narrative_units import DEFAULT_UNIT_LABEL, DEFAULT_UNIT_TYPE
 from dms.parsing import (
     JSONParseResult,
     extract_json_value,
@@ -74,6 +75,8 @@ class SceneOrderedPipelineConfig:
     overwrite: bool = False
     scene_task_concurrency: int = 3
     max_chunk_units: int = DEFAULT_MAX_CHUNK_UNITS
+    unit_type: str = DEFAULT_UNIT_TYPE
+    unit_label: str = DEFAULT_UNIT_LABEL
 
 
 @dataclass(frozen=True)
@@ -94,6 +97,9 @@ class _TaskUnitResult:
     task_name: str
     scene_id: str
     unit_id: str
+    unit_type: str
+    unit_label: str
+    unit_order: int | None
     status: str
     error: str | None
     completed_count: int
@@ -143,7 +149,7 @@ def run_scene_ordered_pipeline(
         _copy_base_run(config.base_output_root, output_root)
     output_root.mkdir(parents=True, exist_ok=True)
 
-    scenes = load_script_scenes(config.script_path)
+    scenes = load_script_scenes(config.script_path, unit_type=config.unit_type, unit_label=config.unit_label)
     selected = _select_scenes(scenes, start=config.start, limit=config.limit)
     chunks_by_scene = [(scene, chunk_scene(scene, max_chunk_units=config.max_chunk_units)) for scene in selected]
     selected_chunks = [chunk for _, chunks in chunks_by_scene for chunk in chunks]
@@ -264,7 +270,13 @@ def run_scene_ordered_pipeline(
                     "ordinal": chunk_ordinal,
                     "scene_id": chunk.scene_id,
                     "unit_id": chunk.chunk_id,
+                    "unit_type": chunk.unit_type,
+                    "unit_label": chunk.unit_label,
+                    "unit_order": chunk.discourse_index,
                     "parent_unit_id": chunk.parent_unit_id,
+                    "parent_unit_type": chunk.unit_type,
+                    "parent_unit_label": chunk.unit_label,
+                    "parent_unit_order": chunk.discourse_index,
                     "chunk_id": chunk.chunk_id,
                     "chunk_index": chunk.chunk_index,
                     "chunk_count": chunk.chunk_count,
@@ -316,6 +328,11 @@ def run_scene_ordered_pipeline(
         "chunk_count": len(selected_chunks),
         "max_chunk_units": config.max_chunk_units,
         "scene_task_concurrency": config.scene_task_concurrency,
+        "narrative_unit": {
+            "unit_type": config.unit_type,
+            "unit_label": config.unit_label,
+            "legacy_scene_id_compatibility": True,
+        },
         "task_order": {
             "per_unit_parallel": list(FIRST_WAVE_TASKS),
             "per_unit_refinement": TASK_KG_REFINEMENT,
@@ -483,6 +500,9 @@ def _run_task_for_scene(
         task_name=context.task_name,
         scene_id=scene.scene_id,
         unit_id=unit_id,
+        unit_type=getattr(scene, "unit_type", DEFAULT_UNIT_TYPE),
+        unit_label=getattr(scene, "unit_label", DEFAULT_UNIT_LABEL),
+        unit_order=scene.discourse_index,
         status=status,
         error=error,
         completed_count=completed_count,
@@ -691,6 +711,8 @@ def _write_task_run_summary(
             "limit": config.limit,
             "selected_count": len(selected),
             "chunk_count": len(selected),
+            "unit_type": config.unit_type,
+            "unit_label": config.unit_label,
             "first_scene_id": selected[0].scene_id if selected else None,
             "last_scene_id": selected[-1].scene_id if selected else None,
             "first_unit_id": selected[0].chunk_id if selected else None,
@@ -914,7 +936,13 @@ def _trace_record(ordinal: int, scene: ScriptScene | NarrativeChunk, result: _Ta
         "ordinal": ordinal,
         "scene_id": scene.scene_id,
         "unit_id": result.unit_id,
+        "unit_type": result.unit_type,
+        "unit_label": result.unit_label,
+        "unit_order": scene.discourse_index,
         "parent_unit_id": result.parent_unit_id,
+        "parent_unit_type": result.unit_type,
+        "parent_unit_label": result.unit_label,
+        "parent_unit_order": scene.discourse_index,
         "chunk_id": result.unit_id,
         "chunk_index": result.chunk_index,
         "chunk_count": result.chunk_count,
@@ -937,7 +965,13 @@ def _candidate_payload(result: _TaskUnitResult) -> dict[str, Any]:
         "status": result.parsed_payload.get("status"),
         "unit_id": result.unit_id,
         "scene_id": result.scene_id,
+        "unit_type": result.unit_type,
+        "unit_label": result.unit_label,
+        "unit_order": result.unit_order,
         "parent_unit_id": result.parent_unit_id,
+        "parent_unit_type": result.unit_type,
+        "parent_unit_label": result.unit_label,
+        "parent_unit_order": result.unit_order,
         "chunk_index": result.chunk_index,
         "chunk_count": result.chunk_count,
         "data": data,
@@ -951,8 +985,14 @@ def _chunk_manifest_record(ordinal: int, chunk: NarrativeChunk) -> dict[str, Any
         "ordinal": ordinal,
         "scene_id": chunk.scene_id,
         "unit_id": chunk.chunk_id,
+        "unit_type": chunk.unit_type,
+        "unit_label": chunk.unit_label,
+        "unit_order": chunk.discourse_index,
         "chunk_id": chunk.chunk_id,
         "parent_unit_id": chunk.parent_unit_id,
+        "parent_unit_type": chunk.unit_type,
+        "parent_unit_label": chunk.unit_label,
+        "parent_unit_order": chunk.discourse_index,
         "chunk_index": chunk.chunk_index,
         "chunk_count": chunk.chunk_count,
         "source_record_id": chunk.source_record_id,
@@ -971,7 +1011,13 @@ def _unit_refinement_context(scene: ScriptScene | NarrativeChunk) -> dict[str, A
     return {
         "scene_id": scene.scene_id,
         "unit_id": getattr(scene, "chunk_id", scene.scene_id),
+        "unit_type": getattr(scene, "unit_type", DEFAULT_UNIT_TYPE),
+        "unit_label": getattr(scene, "unit_label", DEFAULT_UNIT_LABEL),
+        "unit_order": scene.discourse_index,
         "parent_unit_id": getattr(scene, "parent_unit_id", scene.scene_id),
+        "parent_unit_type": getattr(scene, "unit_type", DEFAULT_UNIT_TYPE),
+        "parent_unit_label": getattr(scene, "unit_label", DEFAULT_UNIT_LABEL),
+        "parent_unit_order": scene.discourse_index,
         "chunk_index": getattr(scene, "chunk_index", 1),
         "chunk_count": getattr(scene, "chunk_count", 1),
         "source_record_id": scene.source_record_id,
@@ -1110,7 +1156,13 @@ def _wrapper(scene: ScriptScene | NarrativeChunk, **values: Any) -> dict[str, An
     return {
         "scene_id": scene.scene_id,
         "unit_id": unit_id,
+        "unit_type": getattr(scene, "unit_type", DEFAULT_UNIT_TYPE),
+        "unit_label": getattr(scene, "unit_label", DEFAULT_UNIT_LABEL),
+        "unit_order": scene.discourse_index,
         "parent_unit_id": getattr(scene, "parent_unit_id", scene.scene_id),
+        "parent_unit_type": getattr(scene, "unit_type", DEFAULT_UNIT_TYPE),
+        "parent_unit_label": getattr(scene, "unit_label", DEFAULT_UNIT_LABEL),
+        "parent_unit_order": scene.discourse_index,
         "chunk_id": unit_id,
         "chunk_index": getattr(scene, "chunk_index", 1),
         "chunk_count": getattr(scene, "chunk_count", 1),

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from dms.author_context import author_entities_from_context, load_author_entity_context
@@ -21,9 +22,11 @@ from dms.llm import (
     FakeEpisodicMemoryClient,
     FakeKGEntityMentionClient,
     FakeKGEntityRefinementClient,
+    FakeReferenceItemClient,
     FakeSceneEventClient,
     FakeSceneInventoryClient,
     FakeSceneSummaryClient,
+    FakeTemporalExtractionClient,
     FakeVisibilityNotesClient,
     OpenAIChatClient,
 )
@@ -32,6 +35,7 @@ from dms.memory import (
     build_entity_resolution_artifacts,
     build_episodic_memory,
     build_kg_entity_memory,
+    build_memory_timeline_index,
     build_prefix_commits,
     build_prefix_world_model,
     build_scene_event_memory,
@@ -40,7 +44,19 @@ from dms.memory import (
     build_visibility_grounded_packet,
     build_visibility_memory,
     build_visibility_packet,
+    MemoryTimelineIndexConfig,
     query_memory,
+)
+from dms.narrative_units import DEFAULT_UNIT_LABEL, DEFAULT_UNIT_TYPE
+from dms.reference_library import (
+    ChromaReferenceIndexConfig,
+    ReferenceItemExtractionConfig,
+    ReferenceItemImportConfig,
+    ReferenceLibraryIngestConfig,
+    build_chroma_reference_index,
+    extract_reference_items,
+    ingest_reference_library,
+    import_reference_items,
 )
 from dms.retrieval import MemoryPacketConfig, build_memory_packet, format_memory_packet_markdown
 from dms.prompts import YAMLPromptLoader
@@ -51,6 +67,7 @@ from dms.runners import (
     SceneInventoryRunConfig,
     SceneOrderedPipelineConfig,
     SceneSummaryRunConfig,
+    TemporalExtractionRunConfig,
     VisibilityNotesRunConfig,
     run_durable_relationships,
     run_scene_events,
@@ -58,10 +75,18 @@ from dms.runners import (
     run_kg_entity_mentions,
     run_scene_summary,
     run_scene_ordered_pipeline,
+    run_temporal_extraction,
     run_visibility_notes,
 )
 from dms.scripts.wandering_earth import load_script_scenes, write_jsonl, write_summary
-from dms.simulation import AttributeCardConfig, SocialSimulationConfig, build_entity_attribute_cards, run_social_simulation
+from dms.simulation import (
+    AttributeCardConfig,
+    SceneDispositionNoteConfig,
+    SocialSimulationConfig,
+    build_entity_attribute_cards,
+    build_scene_disposition_notes,
+    run_social_simulation,
+)
 from dms.storage import (
     AssetStoreImportConfig,
     ChromaMemoryIndexConfig,
@@ -70,7 +95,6 @@ from dms.storage import (
     import_run_assets,
     search_entity_memories,
 )
-from dms.ui.gradio_app import main as launch_gradio_app
 from dms.workflow import WritingE2EConfig, run_writing_e2e
 
 
@@ -132,11 +156,27 @@ def _read_reference_scene_text(script_path: Path | None, scene_id: str | None) -
     raise ValueError(f"Scene not found in {script_path}: {scene_id}")
 
 
+def _add_reference_context_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--include-reference-context", action="store_true")
+    parser.add_argument("--reference-db", "--reference-db-path", dest="reference_db_path", type=Path, default=None)
+    parser.add_argument("--reference-chroma-dir", type=Path, default=None)
+    parser.add_argument("--reference-collection-name", default="dms_reference_documents")
+    parser.add_argument("--reference-top-k", type=int, default=6)
+    parser.add_argument("--reference-author-top-k", type=int, default=6)
+    parser.add_argument("--reference-character-top-k", type=int, default=6)
+    parser.add_argument("--reference-style-top-k", type=int, default=4)
+    parser.add_argument("--reference-timeline-top-k", type=int, default=4)
+
+
 def _build_llm_client(args: argparse.Namespace, *, fake_task: str = "scene_inventory"):
     model_config_path = getattr(args, "model_config", None)
     if model_config_path:
         model_section = getattr(args, "model_section", None) or "llm"
-        return build_openai_client_from_config(load_local_config(model_config_path), model_section)
+        return build_openai_client_from_config(
+            load_local_config(model_config_path),
+            model_section,
+            overrides=_explicit_model_overrides(args),
+        )
     if args.provider == "fake":
         if fake_task == "scene_summary":
             return FakeSceneSummaryClient()
@@ -146,12 +186,16 @@ def _build_llm_client(args: argparse.Namespace, *, fake_task: str = "scene_inven
             return FakeKGEntityRefinementClient()
         if fake_task == "scene_events":
             return FakeSceneEventClient()
+        if fake_task == "temporal_extraction":
+            return FakeTemporalExtractionClient()
         if fake_task == "visibility_notes":
             return FakeVisibilityNotesClient()
         if fake_task == "episodic_memories":
             return FakeEpisodicMemoryClient()
         if fake_task == "durable_relationships":
             return FakeDurableRelationshipClient()
+        if fake_task == "reference_items":
+            return FakeReferenceItemClient()
         return FakeSceneInventoryClient()
     if args.provider == "anthropic":
         return AnthropicMessagesClient(
@@ -173,6 +217,18 @@ def _build_llm_client(args: argparse.Namespace, *, fake_task: str = "scene_inven
             enable_thinking=False,
         )
     raise ValueError(f"Unsupported provider: {args.provider}")
+
+
+def _explicit_model_overrides(args: argparse.Namespace) -> dict[str, object]:
+    raw_args = getattr(args, "_raw_argv", ())
+    overrides: dict[str, object] = {}
+    if "--max-tokens" in raw_args:
+        overrides["max_tokens"] = args.max_tokens
+    if "--temperature" in raw_args:
+        overrides["temperature"] = args.temperature
+    if "--timeout-seconds" in raw_args:
+        overrides["timeout_seconds"] = args.timeout_seconds
+    return overrides
 
 
 def _embedding_kwargs(args: argparse.Namespace) -> dict:
@@ -205,17 +261,22 @@ def _build_task_llm_clients(args: argparse.Namespace):
 
 
 def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(prog="dms")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     inspect_script = subparsers.add_parser("inspect-script", help="Inspect a local script JSON fixture.")
     inspect_script.add_argument("path", type=Path)
     inspect_script.add_argument("--limit", type=int, default=3)
+    inspect_script.add_argument("--unit-type", default=DEFAULT_UNIT_TYPE)
+    inspect_script.add_argument("--unit-label", default=DEFAULT_UNIT_LABEL)
 
     export_script = subparsers.add_parser("export-script-units", help="Export ordered script units as JSONL.")
     export_script.add_argument("path", type=Path)
     export_script.add_argument("--output", type=Path, required=True)
     export_script.add_argument("--summary", type=Path, default=None)
+    export_script.add_argument("--unit-type", default=DEFAULT_UNIT_TYPE)
+    export_script.add_argument("--unit-label", default=DEFAULT_UNIT_LABEL)
 
     eligibility = subparsers.add_parser(
         "build-scene-eligibility",
@@ -292,6 +353,33 @@ def main(argv: list[str] | None = None) -> int:
     events.add_argument("--max-tokens", type=int, default=2048)
     events.add_argument("--temperature", type=float, default=0.0)
     events.add_argument("--timeout-seconds", type=int, default=120)
+
+    temporal = subparsers.add_parser(
+        "run-temporal-extraction",
+        help="Run diegetic temporal extraction and build an audit timeline graph.",
+    )
+    temporal.add_argument("script_path", type=Path)
+    temporal.add_argument("--output-dir", type=Path, required=True)
+    temporal.add_argument("--prompt-dir", type=Path, default=Path("task_specs/prompts"))
+    temporal.add_argument(
+        "--task-settings",
+        type=Path,
+        default=Path("task_specs/task_settings/temporal_extraction_task.json"),
+    )
+    temporal.add_argument("--prior-timeline", type=Path, default=None)
+    temporal.add_argument("--start", type=int, default=1)
+    temporal.add_argument("--limit", type=int, default=5)
+    temporal.add_argument("--dry-run", action=argparse.BooleanOptionalAction, default=True)
+    temporal.add_argument("--overwrite", action="store_true")
+    temporal.add_argument("--model-config", type=Path, default=None)
+    temporal.add_argument("--model-section", default="llm")
+    temporal.add_argument("--provider", choices=["fake", "anthropic", "openai"], default="fake")
+    temporal.add_argument("--model", default=None)
+    temporal.add_argument("--base-url", default=None)
+    temporal.add_argument("--auth-token", default=None)
+    temporal.add_argument("--max-tokens", type=int, default=2048)
+    temporal.add_argument("--temperature", type=float, default=0.0)
+    temporal.add_argument("--timeout-seconds", type=int, default=120)
 
     kg_entities = subparsers.add_parser(
         "run-kg-entities",
@@ -409,6 +497,16 @@ def main(argv: list[str] | None = None) -> int:
     build_epi_memory.add_argument("run_dir", type=Path)
     build_epi_memory.add_argument("--output-dir", type=Path, required=True)
 
+    build_memory_timeline = subparsers.add_parser(
+        "build-memory-timeline-index",
+        help="Attach diegetic timeline indexes to episodic memory JSONL artifacts.",
+    )
+    build_memory_timeline.add_argument("memory_path", type=Path)
+    build_memory_timeline.add_argument("--timeline-graph", type=Path, required=True)
+    build_memory_timeline.add_argument("--output-dir", type=Path, required=True)
+    build_memory_timeline.add_argument("--min-match-score", type=float, default=0.25)
+    build_memory_timeline.add_argument("--overwrite", action="store_true")
+
     build_relationship_memory_parser = subparsers.add_parser(
         "build-relationship-memory",
         help="Build durable relationship memory artifacts from parsed relationship outputs.",
@@ -461,6 +559,68 @@ def main(argv: list[str] | None = None) -> int:
     asset_store.add_argument("--output-db", type=Path, required=True)
     asset_store.add_argument("--summary-memory-dir", type=Path, default=None)
     asset_store.add_argument("--overwrite", action="store_true")
+
+    reference_ingest = subparsers.add_parser(
+        "ingest-reference-library",
+        help="Chunk mixed external reference files into raw reference-library JSONL artifacts.",
+    )
+    reference_ingest.add_argument("input_path", type=Path)
+    reference_ingest.add_argument("--output-dir", type=Path, required=True)
+    reference_ingest.add_argument("--max-chunk-chars", type=int, default=2400)
+    reference_ingest.add_argument("--overwrite", action="store_true")
+
+    reference_extract = subparsers.add_parser(
+        "extract-reference-items",
+        help="Extract flat reference_items.jsonl from ingested external reference chunks.",
+    )
+    reference_extract.add_argument("library_dir", type=Path)
+    reference_extract.add_argument("--output-dir", type=Path, required=True)
+    reference_extract.add_argument("--prompt-dir", type=Path, default=Path("task_specs/prompts"))
+    reference_extract.add_argument(
+        "--task-settings",
+        type=Path,
+        default=Path("task_specs/task_settings/reference_items_task.json"),
+    )
+    reference_extract.add_argument("--start", type=int, default=1)
+    reference_extract.add_argument("--limit", type=int, default=None)
+    reference_extract.add_argument("--dry-run", action=argparse.BooleanOptionalAction, default=True)
+    reference_extract.add_argument("--overwrite", action="store_true")
+    reference_extract.add_argument("--model-config", type=Path, default=None)
+    reference_extract.add_argument("--model-section", default="llm")
+    reference_extract.add_argument("--provider", choices=["fake", "anthropic", "openai"], default="fake")
+    reference_extract.add_argument("--model", default=None)
+    reference_extract.add_argument("--base-url", default=None)
+    reference_extract.add_argument("--auth-token", default=None)
+    reference_extract.add_argument("--max-tokens", type=int, default=4096)
+    reference_extract.add_argument("--temperature", type=float, default=0.0)
+    reference_extract.add_argument("--timeout-seconds", type=int, default=120)
+
+    reference_items = subparsers.add_parser(
+        "import-reference-items",
+        help="Import flat external reference items JSONL into a standalone SQLite reference library.",
+    )
+    reference_items.add_argument("items_path", type=Path)
+    reference_items.add_argument("--output-db", type=Path, required=True)
+    reference_items.add_argument("--overwrite", action="store_true")
+
+    reference_index = subparsers.add_parser(
+        "build-reference-index",
+        help="Index standalone external reference documents in a persistent Chroma collection.",
+    )
+    reference_index.add_argument("db_path", type=Path)
+    reference_index.add_argument("--persist-dir", type=Path, required=True)
+    reference_index.add_argument("--collection-name", default="dms_reference_documents")
+    reference_index.add_argument("--model-config", type=Path, default=None)
+    reference_index.add_argument("--embedding-section", default="embedding")
+    reference_index.add_argument("--embedding-dim", type=int, default=384)
+    reference_index.add_argument("--embedding-provider", choices=["hash", "openai"], default="hash")
+    reference_index.add_argument("--embedding-model", default=None)
+    reference_index.add_argument("--embedding-base-url", default=None)
+    reference_index.add_argument("--embedding-api-key", default=None)
+    reference_index.add_argument("--embedding-max-tokens", type=int, default=8192)
+    reference_index.add_argument("--embedding-timeout", type=int, default=60)
+    reference_index.add_argument("--upsert-batch-size", type=int, default=1000)
+    reference_index.add_argument("--overwrite", action="store_true")
 
     query_entity_memories = subparsers.add_parser(
         "query-entity-memories",
@@ -523,8 +683,11 @@ def main(argv: list[str] | None = None) -> int:
     memory_packet.add_argument("--writing-intent-file", type=Path, default=None)
     memory_packet.add_argument("--before-scene", default=None)
     memory_packet.add_argument("--before-scene-order", type=int, default=None)
+    memory_packet.add_argument("--unit-type", default=DEFAULT_UNIT_TYPE)
+    memory_packet.add_argument("--unit-label", default=DEFAULT_UNIT_LABEL)
     memory_packet.add_argument("--scene-top-k", type=int, default=5)
     memory_packet.add_argument("--entity-memory-top-k", type=int, default=12)
+    memory_packet.add_argument("--global-scope-memory-top-k", type=int, default=8)
     memory_packet.add_argument("--max-entity-memories-before-vector", type=int, default=50)
     memory_packet.add_argument("--entity-match-limit", type=int, default=1)
     memory_packet.add_argument("--collection-name", default="dms_retrieval_documents")
@@ -537,6 +700,7 @@ def main(argv: list[str] | None = None) -> int:
     memory_packet.add_argument("--embedding-api-key", default=None)
     memory_packet.add_argument("--embedding-max-tokens", type=int, default=8192)
     memory_packet.add_argument("--embedding-timeout", type=int, default=60)
+    _add_reference_context_args(memory_packet)
     memory_packet.add_argument("--format", choices=["json", "markdown"], default="json")
     memory_packet.add_argument("--output", type=Path, default=None)
 
@@ -588,6 +752,29 @@ def main(argv: list[str] | None = None) -> int:
     attribute_cards.add_argument("--temperature", type=float, default=0.0)
     attribute_cards.add_argument("--timeout-seconds", type=int, default=120)
 
+    disposition_notes = subparsers.add_parser(
+        "build-scene-disposition-notes",
+        help="Build compact scene-conditioned disposition notes from attribute cards and a social simulation intent.",
+    )
+    disposition_notes.add_argument("attribute_cards_path", type=Path)
+    disposition_notes.add_argument("--social-simulation-intent", required=True)
+    disposition_notes.add_argument("--memory-packet", type=Path, default=None)
+    disposition_notes.add_argument("--output-dir", type=Path, required=True)
+    disposition_notes.add_argument("--prompt-dir", type=Path, default=Path("task_specs/prompts"))
+    disposition_notes.add_argument("--entity-type", action="append", dest="entity_types", default=None)
+    disposition_notes.add_argument("--entity", action="append", dest="entity_names", default=None)
+    disposition_notes.add_argument("--max-relevant-memories-per-entity", type=int, default=6)
+    disposition_notes.add_argument("--overwrite", action="store_true")
+    disposition_notes.add_argument("--model-config", type=Path, default=None)
+    disposition_notes.add_argument("--model-section", default="llm")
+    disposition_notes.add_argument("--provider", choices=["fake", "anthropic", "openai"], default="openai")
+    disposition_notes.add_argument("--model", default=None)
+    disposition_notes.add_argument("--base-url", default=None)
+    disposition_notes.add_argument("--auth-token", default=None)
+    disposition_notes.add_argument("--max-tokens", type=int, default=1024)
+    disposition_notes.add_argument("--temperature", type=float, default=0.0)
+    disposition_notes.add_argument("--timeout-seconds", type=int, default=120)
+
     social_simulation = subparsers.add_parser(
         "run-social-simulation",
         help="Run attribute-card-conditioned character social simulation from a low-information social simulation intent.",
@@ -597,6 +784,7 @@ def main(argv: list[str] | None = None) -> int:
     social_simulation.add_argument("--social-simulation-intent-file", type=Path, default=None)
     social_simulation.add_argument("--writing-intent", default=None)
     social_simulation.add_argument("--writing-intent-file", type=Path, default=None)
+    social_simulation.add_argument("--scene-disposition-notes", type=Path, default=None)
     social_simulation.add_argument("--output-dir", type=Path, required=True)
     social_simulation.add_argument("--prompt-dir", type=Path, default=Path("task_specs/prompts"))
     social_simulation.add_argument("--overwrite", action="store_true")
@@ -650,11 +838,15 @@ def main(argv: list[str] | None = None) -> int:
     writing_e2e.add_argument("--prompt-dir", type=Path, default=Path("task_specs/prompts"))
     writing_e2e.add_argument("--before-scene", default=None)
     writing_e2e.add_argument("--before-scene-order", type=int, default=None)
+    writing_e2e.add_argument("--unit-type", default=DEFAULT_UNIT_TYPE)
+    writing_e2e.add_argument("--unit-label", default=DEFAULT_UNIT_LABEL)
     writing_e2e.add_argument("--scene-top-k", type=int, default=5)
     writing_e2e.add_argument("--entity-memory-top-k", type=int, default=12)
+    writing_e2e.add_argument("--global-scope-memory-top-k", type=int, default=8)
     writing_e2e.add_argument("--max-entity-memories-before-vector", type=int, default=50)
     writing_e2e.add_argument("--entity-match-limit", type=int, default=1)
     writing_e2e.add_argument("--collection-name", default="dms_retrieval_documents")
+    _add_reference_context_args(writing_e2e)
     writing_e2e.add_argument("--attribute-entity-type", action="append", dest="attribute_entity_types", default=None)
     writing_e2e.add_argument("--attribute-entity", action="append", dest="attribute_entity_names", default=None)
     writing_e2e.add_argument("--max-memories-per-entity", type=int, default=16)
@@ -692,6 +884,8 @@ def main(argv: list[str] | None = None) -> int:
     benchmark_prepare.add_argument("--limit", type=int, default=None)
     benchmark_prepare.add_argument("--scene-task-concurrency", type=int, default=3)
     benchmark_prepare.add_argument("--max-chunk-units", type=int, default=800)
+    benchmark_prepare.add_argument("--unit-type", default=DEFAULT_UNIT_TYPE)
+    benchmark_prepare.add_argument("--unit-label", default=DEFAULT_UNIT_LABEL)
     benchmark_prepare.add_argument("--db-path", type=Path, default=None)
     benchmark_prepare.add_argument("--chroma-dir", type=Path, default=None)
     benchmark_prepare.add_argument("--collection-name", default="dms_retrieval_documents")
@@ -734,8 +928,12 @@ def main(argv: list[str] | None = None) -> int:
     benchmark_run.add_argument("--evaluation-intent-level", choices=intent_level_choices, default="writing_spec")
     benchmark_run.add_argument("--scene-top-k", type=int, default=5)
     benchmark_run.add_argument("--entity-memory-top-k", type=int, default=12)
+    benchmark_run.add_argument("--global-scope-memory-top-k", type=int, default=8)
     benchmark_run.add_argument("--max-entity-memories-before-vector", type=int, default=50)
     benchmark_run.add_argument("--entity-match-limit", type=int, default=1)
+    _add_reference_context_args(benchmark_run)
+    benchmark_run.add_argument("--unit-type", default=DEFAULT_UNIT_TYPE)
+    benchmark_run.add_argument("--unit-label", default=DEFAULT_UNIT_LABEL)
     benchmark_run.add_argument("--attribute-entity-type", action="append", dest="attribute_entity_types", default=None)
     benchmark_run.add_argument("--attribute-entity", action="append", dest="attribute_entity_names", default=None)
     benchmark_run.add_argument("--max-memories-per-entity", type=int, default=16)
@@ -812,6 +1010,8 @@ def main(argv: list[str] | None = None) -> int:
     ordered.add_argument("--dry-run", action=argparse.BooleanOptionalAction, default=False)
     ordered.add_argument("--scene-task-concurrency", type=int, default=3)
     ordered.add_argument("--max-chunk-units", type=int, default=800)
+    ordered.add_argument("--unit-type", default=DEFAULT_UNIT_TYPE)
+    ordered.add_argument("--unit-label", default=DEFAULT_UNIT_LABEL)
     ordered.add_argument("--model-config", type=Path, default=None)
     ordered.add_argument("--model-section", default="llm")
     ordered.add_argument("--provider", choices=["fake", "anthropic", "openai"], default="fake")
@@ -823,13 +1023,16 @@ def main(argv: list[str] | None = None) -> int:
     ordered.add_argument("--timeout-seconds", type=int, default=120)
     ordered.add_argument("--overwrite", action="store_true")
 
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw_argv)
+    setattr(args, "_raw_argv", tuple(raw_argv))
 
     if args.command == "inspect-script":
-        scenes = load_script_scenes(args.path)
+        scenes = load_script_scenes(args.path, unit_type=args.unit_type, unit_label=args.unit_label)
         payload = {
             "path": str(args.path),
             "scene_count": len(scenes),
+            "unit_type": args.unit_type,
+            "unit_label": args.unit_label,
             "content_char_count": sum(scene.character_count for scene in scenes),
             "first": [scene.to_dict() for scene in scenes[: max(args.limit, 0)]],
         }
@@ -837,7 +1040,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "export-script-units":
-        scenes = load_script_scenes(args.path)
+        scenes = load_script_scenes(args.path, unit_type=args.unit_type, unit_label=args.unit_label)
         write_jsonl(scenes, args.output)
         if args.summary:
             write_summary(scenes, args.summary, source_path=args.path)
@@ -968,6 +1171,25 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
 
+    if args.command == "run-temporal-extraction":
+        llm_client = None if args.dry_run else _build_llm_client(args, fake_task="temporal_extraction")
+        summary = run_temporal_extraction(
+            TemporalExtractionRunConfig(
+                script_path=args.script_path,
+                output_dir=args.output_dir,
+                prompt_dir=args.prompt_dir,
+                task_settings_path=args.task_settings,
+                prior_timeline_path=args.prior_timeline,
+                start=args.start,
+                limit=args.limit,
+                dry_run=args.dry_run,
+                overwrite=args.overwrite,
+            ),
+            llm_client=llm_client,
+        )
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return 0
+
     if args.command == "build-scene-inventory-memory":
         summary = build_scene_inventory_memory(args.run_dir, args.output_dir)
         print(json.dumps(summary, ensure_ascii=False, indent=2))
@@ -995,6 +1217,19 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "build-episodic-memory":
         summary = build_episodic_memory(args.run_dir, args.output_dir)
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "build-memory-timeline-index":
+        summary = build_memory_timeline_index(
+            MemoryTimelineIndexConfig(
+                memory_path=args.memory_path,
+                timeline_graph_path=args.timeline_graph,
+                output_dir=args.output_dir,
+                min_match_score=args.min_match_score,
+                overwrite=args.overwrite,
+            )
+        )
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
 
@@ -1062,6 +1297,62 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
 
+    if args.command == "ingest-reference-library":
+        summary = ingest_reference_library(
+            ReferenceLibraryIngestConfig(
+                input_path=args.input_path,
+                output_dir=args.output_dir,
+                max_chunk_chars=args.max_chunk_chars,
+                overwrite=args.overwrite,
+            )
+        )
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "extract-reference-items":
+        llm_client = None if args.dry_run else _build_llm_client(args, fake_task="reference_items")
+        summary = extract_reference_items(
+            ReferenceItemExtractionConfig(
+                library_dir=args.library_dir,
+                output_dir=args.output_dir,
+                prompt_dir=args.prompt_dir,
+                task_settings_path=args.task_settings,
+                start=args.start,
+                limit=args.limit,
+                dry_run=args.dry_run,
+                overwrite=args.overwrite,
+            ),
+            llm_client=llm_client,
+        )
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "import-reference-items":
+        summary = import_reference_items(
+            ReferenceItemImportConfig(
+                items_path=args.items_path,
+                db_path=args.output_db,
+                reset=args.overwrite,
+            )
+        )
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "build-reference-index":
+        embedding_kwargs = _embedding_kwargs(args)
+        summary = build_chroma_reference_index(
+            ChromaReferenceIndexConfig(
+                db_path=args.db_path,
+                persist_dir=args.persist_dir,
+                collection_name=args.collection_name,
+                reset=args.overwrite,
+                upsert_batch_size=args.upsert_batch_size,
+                **embedding_kwargs,
+            )
+        )
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return 0
+
     if args.command == "query-entity-memories":
         result = get_entity_memories(
             args.db_path,
@@ -1113,11 +1404,23 @@ def main(argv: list[str] | None = None) -> int:
                 writing_intent=_read_writing_intent(args),
                 before_scene_id=args.before_scene,
                 before_scene_order=args.before_scene_order,
+                unit_type=args.unit_type,
+                unit_label=args.unit_label,
                 scene_top_k=args.scene_top_k,
                 entity_memory_top_k=args.entity_memory_top_k,
+                global_scope_memory_top_k=args.global_scope_memory_top_k,
                 max_entity_memories_before_vector=args.max_entity_memories_before_vector,
                 entity_match_limit=args.entity_match_limit,
                 collection_name=args.collection_name,
+                include_reference_context=args.include_reference_context,
+                reference_db_path=args.reference_db_path,
+                reference_chroma_dir=args.reference_chroma_dir,
+                reference_collection_name=args.reference_collection_name,
+                reference_top_k=args.reference_top_k,
+                reference_author_top_k=args.reference_author_top_k,
+                reference_character_top_k=args.reference_character_top_k,
+                reference_style_top_k=args.reference_style_top_k,
+                reference_timeline_top_k=args.reference_timeline_top_k,
                 **embedding_kwargs,
             )
         )
@@ -1185,11 +1488,30 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
 
+    if args.command == "build-scene-disposition-notes":
+        summary = build_scene_disposition_notes(
+            SceneDispositionNoteConfig(
+                attribute_cards_path=args.attribute_cards_path,
+                output_dir=args.output_dir,
+                social_simulation_intent=args.social_simulation_intent,
+                memory_packet_path=args.memory_packet,
+                prompt_dir=args.prompt_dir,
+                entity_types=tuple(args.entity_types or ["character"]),
+                entity_names=tuple(args.entity_names or []),
+                max_relevant_memories_per_entity=args.max_relevant_memories_per_entity,
+                overwrite=args.overwrite,
+            ),
+            llm_client=_build_llm_client(args),
+        )
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return 0
+
     if args.command == "run-social-simulation":
         summary = run_social_simulation(
             SocialSimulationConfig(
                 attribute_cards_path=args.attribute_cards_path,
                 social_simulation_intent=_read_social_simulation_intent(args),
+                scene_disposition_notes_path=args.scene_disposition_notes,
                 output_dir=args.output_dir,
                 prompt_dir=args.prompt_dir,
                 overwrite=args.overwrite,
@@ -1240,11 +1562,23 @@ def main(argv: list[str] | None = None) -> int:
                 prompt_dir=args.prompt_dir,
                 before_scene_id=args.before_scene,
                 before_scene_order=args.before_scene_order,
+                unit_type=args.unit_type,
+                unit_label=args.unit_label,
                 scene_top_k=args.scene_top_k,
                 entity_memory_top_k=args.entity_memory_top_k,
+                global_scope_memory_top_k=args.global_scope_memory_top_k,
                 max_entity_memories_before_vector=args.max_entity_memories_before_vector,
                 entity_match_limit=args.entity_match_limit,
                 collection_name=args.collection_name,
+                include_reference_context=args.include_reference_context,
+                reference_db_path=args.reference_db_path,
+                reference_chroma_dir=args.reference_chroma_dir,
+                reference_collection_name=args.reference_collection_name,
+                reference_top_k=args.reference_top_k,
+                reference_author_top_k=args.reference_author_top_k,
+                reference_character_top_k=args.reference_character_top_k,
+                reference_style_top_k=args.reference_style_top_k,
+                reference_timeline_top_k=args.reference_timeline_top_k,
                 attribute_entity_types=tuple(args.attribute_entity_types or ["character"]),
                 attribute_entity_names=tuple(args.attribute_entity_names or []),
                 max_memories_per_entity=args.max_memories_per_entity,
@@ -1285,6 +1619,8 @@ def main(argv: list[str] | None = None) -> int:
                 limit=args.limit,
                 scene_task_concurrency=args.scene_task_concurrency,
                 max_chunk_units=args.max_chunk_units,
+                unit_type=args.unit_type,
+                unit_label=args.unit_label,
                 db_path=args.db_path,
                 chroma_dir=args.chroma_dir,
                 collection_name=args.collection_name,
@@ -1324,8 +1660,20 @@ def main(argv: list[str] | None = None) -> int:
                 evaluation_intent_level=args.evaluation_intent_level,
                 scene_top_k=args.scene_top_k,
                 entity_memory_top_k=args.entity_memory_top_k,
+                global_scope_memory_top_k=args.global_scope_memory_top_k,
                 max_entity_memories_before_vector=args.max_entity_memories_before_vector,
                 entity_match_limit=args.entity_match_limit,
+                include_reference_context=args.include_reference_context,
+                reference_db_path=args.reference_db_path,
+                reference_chroma_dir=args.reference_chroma_dir,
+                reference_collection_name=args.reference_collection_name,
+                reference_top_k=args.reference_top_k,
+                reference_author_top_k=args.reference_author_top_k,
+                reference_character_top_k=args.reference_character_top_k,
+                reference_style_top_k=args.reference_style_top_k,
+                reference_timeline_top_k=args.reference_timeline_top_k,
+                unit_type=args.unit_type,
+                unit_label=args.unit_label,
                 attribute_entity_types=tuple(args.attribute_entity_types or ["character"]),
                 attribute_entity_names=tuple(args.attribute_entity_names or []),
                 max_memories_per_entity=args.max_memories_per_entity,
@@ -1343,6 +1691,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "launch-ui":
+        from dms.ui.gradio_app import main as launch_gradio_app
+
         return launch_gradio_app(
             [
                 "--script-path",
@@ -1439,6 +1789,8 @@ def main(argv: list[str] | None = None) -> int:
                 overwrite=args.overwrite,
                 scene_task_concurrency=args.scene_task_concurrency,
                 max_chunk_units=args.max_chunk_units,
+                unit_type=args.unit_type,
+                unit_label=args.unit_label,
             ),
             llm_clients=llm_clients,
         )

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,9 @@ from dms.retrieval import (
     decompose_writing_intent,
     format_memory_packet_markdown,
 )
+from dms.reference_library import ReferenceItemImportConfig, import_reference_items
 from dms.storage import AssetStoreImportConfig, ChromaMemoryIndexConfig, build_chroma_memory_index, import_run_assets
+from tests.helpers import write_jsonl
 from tests.storage.test_asset_store import _write_sample_ordered_run
 
 
@@ -42,6 +45,8 @@ def test_memory_packet_dedupes_entity_memories_and_includes_one_hop_relations(tm
             chroma_dir=chroma_dir,
             writing_intent="刘培强和550A在返航任务中涉及脑电波分析",
             before_scene_id="scene_0005",
+            unit_type="chapter",
+            unit_label="chapter",
             scene_top_k=2,
             entity_memory_top_k=3,
             embedding_dim=64,
@@ -49,6 +54,9 @@ def test_memory_packet_dedupes_entity_memories_and_includes_one_hop_relations(tm
     )
 
     assert "writing_intent" not in packet
+    assert packet["retrieval_boundary"]["before_unit_id"] == "scene_0005"
+    assert packet["retrieval_boundary"]["unit_type"] == "chapter"
+    assert packet["retrieval_boundary"]["unit_label"] == "chapter"
     assert "query_decomposition" not in packet
     assert packet["trace"]["query_decomposition"]["important_entities"]
     assert packet["trace"]["query_decomposition"]["narrative_units"]
@@ -74,8 +82,18 @@ def test_memory_packet_dedupes_entity_memories_and_includes_one_hop_relations(tm
     assert "description" not in liu
     assert "profile" in liu
     assert "current_state" in liu
+    assert liu["author_profile"]["stable_traits"] == ["嘴硬", "抗压"]
+    assert liu["author_profile"]["speaking_style"] == ["短句", "压着情绪说"]
+    assert liu["initial_state"]["beliefs"] == ["地球处境正在恶化"]
+    assert liu["profile_policy"]["priority"] == "author_locked"
+    assert "嘴硬" in liu["author_profile_summary"]
+    assert "作者设定里的年轻飞行员" in liu["profile"]
     assert "刘培强返航途中情绪焦躁" in liu["profile"] or "刘培强返航途中情绪焦躁" in liu["current_state"]
     memory_by_index = {memory["index"]: memory for memory in packet["episodic_memories"]}
+    assert {memory["memory_temporal_scope"] for memory in packet["episodic_memories"]} == {
+        "atemporal_fact",
+        "temporal_episode",
+    }
     liu_memory_ids = {memory_by_index[index]["memory_id"] for index in liu["related_memory_index"]}
     assert liu_memory_ids == {"scene_0004_memory_001"}
     assert packet["relations"][0]["relation_type"] == "responsible_for"
@@ -85,6 +103,195 @@ def test_memory_packet_dedupes_entity_memories_and_includes_one_hop_relations(tm
     assert "stated_fact" in packet["related_scene_summaries"][0]["retrieval_sources"]
     assert packet["related_scene_summaries"][0]["metadata"]["title"] == "1、INT.日.印度 数字生命研究室"
     assert packet["related_scene_summaries"][0]["metadata"]["setting"]["location"] == "印度 数字生命研究室"
+    assert packet["trace"]["memory_temporal_scope_policy"]["reveal_time_filtering_changed"] is False
+    markdown = format_memory_packet_markdown(packet)
+    assert "author profile baseline" in markdown
+    assert "author initial state" in markdown
+    assert "current state before chapter scene_0005" in markdown
+
+
+def test_memory_packet_retrieves_global_atemporal_memories_without_entity_link(tmp_path: Path) -> None:
+    run_root = _write_sample_ordered_run(tmp_path)
+    memories_path = run_root / "memories" / "episodic_memories.jsonl"
+    records = [
+        json.loads(line)
+        for line in memories_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    records.append(
+        {
+            "record_id": "scene_0004_memory_002",
+            "parent_unit_id": "scene_0004",
+            "chunk_id": "scene_0004",
+            "chunk_index": 1,
+            "sequence_index": 3,
+            "timeline_index": "scene_0004:003",
+            "memory_type": "observation",
+            "memory_temporal_scope": "atemporal_fact",
+            "summary": "月球发动机危机是所有返航任务的背景风险",
+            "evidence_text": "月球发动机危机正在扩大",
+            "parent_source_sha256": "sha4",
+        }
+    )
+    write_jsonl(memories_path, records)
+
+    db_path = tmp_path / "assets.sqlite"
+    chroma_dir = tmp_path / "chroma"
+    import_run_assets(AssetStoreImportConfig(db_path=db_path, ordered_run_dir=run_root, reset=True))
+    build_chroma_memory_index(ChromaMemoryIndexConfig(db_path=db_path, persist_dir=chroma_dir, reset=True, embedding_dim=64))
+
+    packet = build_memory_packet(
+        MemoryPacketConfig(
+            db_path=db_path,
+            chroma_dir=chroma_dir,
+            writing_intent="写刘培强返航时面对月球发动机危机的背景风险",
+            before_scene_id="scene_0005",
+            scene_top_k=2,
+            entity_memory_top_k=2,
+            global_scope_memory_top_k=3,
+            embedding_dim=64,
+        )
+    )
+
+    assert "scene_0004_memory_002" in {memory["memory_id"] for memory in packet["episodic_memories"]}
+    assert packet["trace"]["global_scope_memory_retrieval"]["returned_count"] >= 1
+    assert packet["trace"]["global_scope_memory_retrieval"]["allowed_scopes"] == ["atemporal_fact", "durable_state"]
+
+    earlier_packet = build_memory_packet(
+        MemoryPacketConfig(
+            db_path=db_path,
+            chroma_dir=chroma_dir,
+            writing_intent="写刘培强返航时面对月球发动机危机的背景风险",
+            before_scene_id="scene_0004",
+            scene_top_k=2,
+            entity_memory_top_k=2,
+            global_scope_memory_top_k=3,
+            embedding_dim=64,
+        )
+    )
+
+    assert "scene_0004_memory_002" not in {memory["memory_id"] for memory in earlier_packet["episodic_memories"]}
+
+
+def test_memory_packet_optionally_includes_external_reference_context(tmp_path: Path) -> None:
+    run_root = _write_sample_ordered_run(tmp_path)
+    db_path = tmp_path / "assets.sqlite"
+    chroma_dir = tmp_path / "chroma"
+    import_run_assets(AssetStoreImportConfig(db_path=db_path, ordered_run_dir=run_root, reset=True))
+    build_chroma_memory_index(ChromaMemoryIndexConfig(db_path=db_path, persist_dir=chroma_dir, reset=True, embedding_dim=64))
+
+    reference_items = tmp_path / "reference_items.jsonl"
+    write_jsonl(
+        reference_items,
+        [
+            {
+                "item_id": "ref_world_550a",
+                "doc_id": "world_bible",
+                "item_type": "world_bible",
+                "subject": "550A",
+                "statement": "550A是数字生命研究室里的量子计算机。",
+                "evidence": "世界观设定：550A负责脑电波分析。",
+                "knowledge_scope": "world_public",
+                "known_to": "all",
+                "authority": 0.9,
+                "confidence": 0.95,
+            },
+            {
+                "item_id": "ref_liu_private",
+                "doc_id": "profiles",
+                "item_type": "character_profile",
+                "subject": "刘培强",
+                "statement": "刘培强知道550A能够分析脑电波。",
+                "evidence": "角色档案：刘培强了解550A基础能力。",
+                "knowledge_scope": "character_private",
+                "known_to": ["刘培强"],
+                "authority": 0.8,
+                "confidence": 0.9,
+            },
+            {
+                "item_id": "ref_author_note",
+                "doc_id": "notes",
+                "item_type": "author_note",
+                "subject": "张鹏",
+                "statement": "张鹏承担压住刘培强冲动的写作功能。",
+                "knowledge_scope": "author_only",
+                "authority": 0.7,
+                "confidence": 0.8,
+            },
+            {
+                "item_id": "ref_style",
+                "doc_id": "style",
+                "item_type": "style_guide",
+                "subject": "驾驶舱对白",
+                "statement": "驾驶舱对白应短促，不做长篇解释。",
+                "knowledge_scope": "style_only",
+                "authority": 0.6,
+                "confidence": 0.9,
+            },
+            {
+                "item_id": "ref_future",
+                "doc_id": "timeline",
+                "item_type": "timeline_doc",
+                "subject": "550A",
+                "statement": "后续章节才揭示550A的限制。",
+                "knowledge_scope": "revealed_by_story",
+                "known_to": "all",
+                "available_from": "scene_0010",
+                "authority": 0.7,
+                "confidence": 0.8,
+            },
+        ],
+    )
+    reference_db = tmp_path / "reference.sqlite"
+    import_reference_items(ReferenceItemImportConfig(items_path=reference_items, db_path=reference_db, reset=True))
+
+    packet_without_refs = build_memory_packet(
+        MemoryPacketConfig(
+            db_path=db_path,
+            chroma_dir=chroma_dir,
+            writing_intent="刘培强和550A在返航任务中涉及脑电波分析",
+            before_scene_id="scene_0005",
+            embedding_dim=64,
+        )
+    )
+    assert packet_without_refs["author_reference_context"] == []
+    assert packet_without_refs["trace"]["reference_context_retrieval"]["enabled"] is False
+    assert "Author Reference Context" not in format_memory_packet_markdown(packet_without_refs)
+
+    packet = build_memory_packet(
+        MemoryPacketConfig(
+            db_path=db_path,
+            chroma_dir=chroma_dir,
+            writing_intent="刘培强和550A在返航任务中涉及脑电波分析",
+            before_scene_id="scene_0005",
+            embedding_dim=64,
+            include_reference_context=True,
+            reference_db_path=reference_db,
+            reference_top_k=8,
+            reference_author_top_k=8,
+            reference_character_top_k=8,
+            reference_style_top_k=8,
+            reference_timeline_top_k=8,
+        )
+    )
+
+    assert packet["trace"]["reference_context_retrieval"]["enabled"] is True
+    assert {item["item_id"] for item in packet["author_reference_context"]} >= {
+        "ref_world_550a",
+        "ref_liu_private",
+        "ref_author_note",
+    }
+    assert {item["item_id"] for item in packet["character_reference_knowledge"]} == {
+        "ref_world_550a",
+        "ref_liu_private",
+    }
+    assert packet["style_reference_context"][0]["item_id"] == "ref_style"
+    assert "ref_future" not in {item["item_id"] for item in packet["timeline_reference_claims"]}
+    markdown = format_memory_packet_markdown(packet)
+    assert "## Author Reference Context" in markdown
+    assert "## Character Reference Knowledge" in markdown
+    assert "刘培强知道550A能够分析脑电波" in markdown
+    assert "驾驶舱对白应短促" in markdown
 
 
 def test_memory_packet_markdown_wraps_reference_text() -> None:
@@ -170,3 +377,54 @@ def test_memory_packet_markdown_uses_entity_profile_fields() -> None:
     assert "- profile: 年轻飞行员" in markdown
     assert "- current state before scene_0006: 对地球处境带有逃避情绪。" in markdown
     assert "- description:" not in markdown
+
+
+def test_memory_packet_markdown_uses_unit_boundary_label_without_scene_duplication() -> None:
+    packet = {
+        "retrieval_boundary": {
+            "before_unit_id": "chapter_0006",
+            "unit_type": "chapter",
+            "unit_label": "chapter",
+            "before_scene_id": "scene_0006",
+        },
+        "entities": [
+            {
+                "canonical_name": "刘培强",
+                "entity_type": "character",
+                "current_state": "正在返航前。",
+                "related_memory_index": [],
+            }
+        ],
+        "relations": [],
+        "relationship_diagnostics": {},
+        "episodic_memories": [],
+        "related_scene_summaries": [],
+        "references": [],
+    }
+
+    markdown = format_memory_packet_markdown(packet)
+
+    assert "- current state before chapter_0006: 正在返航前。" in markdown
+
+
+def test_memory_packet_markdown_includes_memory_temporal_scope() -> None:
+    packet = {
+        "entities": [],
+        "relations": [],
+        "relationship_diagnostics": {},
+        "episodic_memories": [
+            {
+                "index": "M1",
+                "summary": "数字生命技术是一种延续文明的技术",
+                "scene_id": "scene_0001",
+                "memory_temporal_scope": "atemporal_fact",
+                "source_ref": "R1",
+            }
+        ],
+        "related_scene_summaries": [],
+        "references": [],
+    }
+
+    markdown = format_memory_packet_markdown(packet)
+
+    assert "scope: atemporal_fact" in markdown

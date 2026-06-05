@@ -26,6 +26,8 @@ template: |
   - Use only the provided simulation context.
   - The simulation context must not contain the held-out target scene text or writing_spec. If such fields appear, ignore them.
   - Treat social_simulation_intent as a low-information request for the new scene, not as evidence about the character's established past, identity, profession, rank, or relationship.
+  - If simulation_context contains scene_disposition_note, treat it as a compact scene-conditioned behavior prior. It may guide how established traits become more or less salient in this requested scene.
+  - Do not cite scene_disposition_note as memory evidence, and do not copy it verbatim. Convert it into concrete likely internal state, action posture, dialogue posture, or risk notes when useful.
   - If social_simulation_intent asks for a tone or voice, such as "old-soldier voice", keep it as a requested dialogue texture. Do not rewrite it as an established identity, career, rank, or biography unless the attribute card supports that fact.
   - Respect the target attribute card's prefix_boundary.
   - Treat hard_constraints as non-negotiable.

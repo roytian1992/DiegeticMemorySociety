@@ -1,0 +1,46 @@
+{
+  "corpus_id": "we2_web_refs_20260605",
+  "created_at": "2026-06-05",
+  "retrieved_at": "2026-06-05",
+  "copyright_policy": "Do not mirror full pages. Store summarized notes plus short evidence snippets and source URLs.",
+  "sources": [
+    {
+      "source_id": "en_wiki_we2",
+      "url": "https://en.wikipedia.org/wiki/The_Wandering_Earth_2",
+      "used_for": ["film identity", "release context", "style/review signal"],
+      "short_evidence_examples": ["prequel to the 2019 film", "dense and multi-layered plot"]
+    },
+    {
+      "source_id": "zh_wiki_we2",
+      "url": "https://zh.wikipedia.org/wiki/%E6%B5%81%E6%B5%AA%E5%9C%B0%E7%90%832",
+      "used_for": ["character profile notes", "UEG roles", "Zhang Peng / Ma Zhao / Zhou Zhezhi / Tu Yaya notes"],
+      "short_evidence_examples": ["UEG空军中国飞行员", "北京数字生命研究所主任"]
+    },
+    {
+      "source_id": "zh_wiki_wandering_earth_series",
+      "url": "https://zh.wikipedia.org/wiki/%E6%B5%81%E6%B5%AA%E5%9C%B0%E7%90%83%E7%B3%BB%E5%88%97%E7%94%B5%E5%BD%B1",
+      "used_for": ["550 series technology notes", "550A/550C/550W distinctions"],
+      "short_evidence_examples": ["智能量子计算机550A", "全球行星发动机控制网络"]
+    },
+    {
+      "source_id": "gcores_ueg_design",
+      "url": "https://www.gcores.com/articles/162106",
+      "used_for": ["UEG design notes", "Libreville location", "Gabon base", "J20C design", "550W production-design note"],
+      "short_evidence_examples": ["非洲加蓬的利伯维尔", "歼20的升级改款"]
+    },
+    {
+      "source_id": "sino_cinema_review",
+      "url": "https://sino-cinema.com/2023/02/17/review-the-wandering-earth-ii-2023/",
+      "used_for": ["sun crisis summary", "UEG setup", "Moving Mountain Project", "2044 timeline hint"],
+      "short_evidence_examples": ["United Earth Government was set up", "story kicks off in 2044"]
+    }
+  ],
+  "files": [
+    "README.md",
+    "world_bible_mixed.md",
+    "character_profiles.txt",
+    "timeline_and_world_refs.json",
+    "mixed_reference_notes.jsonl",
+    "source_manifest.json"
+  ]
+}

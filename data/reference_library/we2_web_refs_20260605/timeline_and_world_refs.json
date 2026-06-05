@@ -1,0 +1,96 @@
+{
+  "corpus_id": "we2_web_refs_20260605",
+  "created_at": "2026-06-05",
+  "format": "json",
+  "source_policy": "summarized notes with short evidence snippets, not full-page copies",
+  "documents": [
+    {
+      "doc_id": "timeline_review_notes",
+      "source_url": "https://sino-cinema.com/2023/02/17/review-the-wandering-earth-ii-2023/",
+      "chunks": [
+        {
+          "chunk_id": "timeline_review_notes_001",
+          "heading": "太阳危机与 UEG",
+          "body": "评论资料将世界危机概括为太阳快速恶化，地球将在长期尺度上被吞没；人类因此成立地球联合政府寻找方案。",
+          "candidate_item_types": ["world_bible", "timeline_doc", "organization_fact"],
+          "evidence_short": "United Earth Government was set up",
+          "knowledge_scope_hint": "world_public",
+          "known_to_hint": "all",
+          "available_from_hint": "story_start"
+        },
+        {
+          "chunk_id": "timeline_review_notes_002",
+          "heading": "2044 开端",
+          "body": "同一评论把影片故事开端定位在 2044 年，并说明其发生在第一部电影之前，展示移山计划的混乱诞生阶段。",
+          "candidate_item_types": ["timeline_doc"],
+          "evidence_short": "story kicks off in 2044",
+          "knowledge_scope_hint": "author_only",
+          "known_to_hint": [],
+          "available_from_hint": "story_start"
+        },
+        {
+          "chunk_id": "timeline_review_notes_003",
+          "heading": "迁徙目标",
+          "body": "移山计划的宏观目标是建设大量地球发动机，推动地球离开太阳系，并进行约 2500 年尺度的迁徙。",
+          "candidate_item_types": ["world_bible", "timeline_doc"],
+          "evidence_short": "2,500-year migration",
+          "knowledge_scope_hint": "world_public",
+          "known_to_hint": "all",
+          "available_from_hint": "story_start"
+        }
+      ]
+    },
+    {
+      "doc_id": "tech_series_notes",
+      "source_url": "https://zh.wikipedia.org/wiki/%E6%B5%81%E6%B5%AA%E5%9C%B0%E7%90%83%E7%B3%BB%E5%88%97%E7%94%B5%E5%BD%B1",
+      "chunks": [
+        {
+          "chunk_id": "tech_series_notes_001",
+          "heading": "550A",
+          "body": "550A 是 550 系列早期智能量子计算机版本，和北京数字生命研究所、图丫丫数字生命备份、月球卫星发动机一号测试机可行性验证等剧情线相关。",
+          "candidate_item_types": ["world_bible", "character_profile", "timeline_doc"],
+          "evidence_short": "智能量子计算机550A",
+          "knowledge_scope_hint": "author_only",
+          "known_to_hint": [],
+          "available_from_hint": "unknown"
+        },
+        {
+          "chunk_id": "tech_series_notes_002",
+          "heading": "550C",
+          "body": "550C 可被当作 550 系列后续型号的背景；资料将其中一台与加蓬联合实验基地统筹管理和无人机控制系统覆写联系起来。",
+          "candidate_item_types": ["world_bible", "location_doc"],
+          "evidence_short": "550C被用于加蓬联合实验基地",
+          "knowledge_scope_hint": "author_only",
+          "known_to_hint": [],
+          "available_from_hint": "unknown"
+        },
+        {
+          "chunk_id": "tech_series_notes_003",
+          "heading": "550W",
+          "body": "550W 是更强的后续型号，和全球行星发动机控制网络、数字生命体承载能力相关。它可以支撑世界观设定，但不应自动泄露给早期场景中的角色。",
+          "candidate_item_types": ["world_bible", "timeline_doc"],
+          "evidence_short": "全球行星发动机控制网络",
+          "knowledge_scope_hint": "revealed_by_story",
+          "known_to_hint": "all",
+          "available_from_hint": "unknown"
+        }
+      ]
+    },
+    {
+      "doc_id": "style_and_review_notes",
+      "source_url": "https://en.wikipedia.org/wiki/The_Wandering_Earth_2",
+      "chunks": [
+        {
+          "chunk_id": "style_and_review_notes_001",
+          "heading": "信息密度与节奏",
+          "body": "评论摘要提到影片技术成就、视觉规模和世界观野心，也指出剧情多线并进、信息密度较高。写作时可作为节奏和信息压缩的风格参考。",
+          "candidate_item_types": ["style_guide", "author_note"],
+          "evidence_short": "dense and multi-layered plot",
+          "knowledge_scope_hint": "style_only",
+          "known_to_hint": [],
+          "available_from_hint": "story_start"
+        }
+      ]
+    }
+  ]
+}

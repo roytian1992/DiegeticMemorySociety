@@ -1,0 +1,59 @@
+流浪地球2 外部参考笔记：角色与组织
+created_at: 2026-06-05
+format: plain_text
+policy: summarized reference notes with short evidence snippets
+
+SOURCE zh_wiki_movie
+url: https://zh.wikipedia.org/wiki/%E6%B5%81%E6%B5%AA%E5%9C%B0%E7%90%832
+
+[character_profile] 张鹏
+statement: 张鹏可被设定为 UEG 空军中国飞行员、加蓬基地航天员教官，并与刘培强存在师父/训练者关系。
+knowledge_scope_suggestion: author_only
+known_to_suggestion: []
+evidence_short: UEG空军中国飞行员
+note: 如果要作为刘培强可见知识，需要另有证据说明刘培强知道或承认这层身份关系。
+
+[character_profile] 马兆
+statement: 马兆与北京数字生命研究所、智能量子计算机研究、图恒宇相关剧情线关联紧密，可作为数字生命/550系列资料的关键人物。
+knowledge_scope_suggestion: author_only
+known_to_suggestion: []
+evidence_short: 北京数字生命研究所主任
+
+[character_profile] 周喆直
+statement: 周喆直是地球联合政府中国代表/大使相关人物，适合支撑 UEG 政治线、计划推动与中国代表团语境。
+knowledge_scope_suggestion: author_only
+known_to_suggestion: []
+evidence_short: 中国驻地球联合政府大使
+
+[character_profile] 郝晓晞
+statement: 郝晓晞与地球联合政府中国代表团、周喆直助理和后续接任职责相关，适合支撑外交/发言场景背景。
+knowledge_scope_suggestion: author_only
+known_to_suggestion: []
+evidence_short: 中国代表团发言人
+
+[character_profile] 图丫丫
+statement: 图丫丫是图恒宇之女，与数字生命备份和 550A/550W 技术线有关。她的知识状态不应自动转移给其他角色。
+knowledge_scope_suggestion: author_only
+known_to_suggestion: []
+evidence_short: 图恒宇之女
+
+[organization_fact] 地球联合政府 / UEG
+statement: UEG 是太阳危机后人类协调自救方案的核心政治组织，和移山计划、加蓬基地、空军/航天员训练等多条线相关。
+knowledge_scope_suggestion: world_public
+known_to_suggestion: all
+evidence_short: 地球联合政府
+
+SOURCE gcores_ueg_design
+url: https://www.gcores.com/articles/162106
+
+[location_doc] UEG 加蓬联合实验基地
+statement: UEG 加蓬联合实验基地包含军事训练、机库、登舱安检、维修、宿舍、医院等功能区，适合作为任务型基地场景的空间参考。
+knowledge_scope_suggestion: world_public
+known_to_suggestion: all
+evidence_short: 加蓬联合实验基地
+
+[location_doc] 利伯维尔战场
+statement: 影片开篇战场环境以加蓬利伯维尔为基础，视觉上参考当地城市形态、建筑、标识、广告和涂鸦。
+knowledge_scope_suggestion: world_public
+known_to_suggestion: all
+evidence_short: 非洲加蓬的利伯维尔

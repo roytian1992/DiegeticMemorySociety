@@ -39,6 +39,8 @@ writing_llm:
 
     assert client.model == "gpt-5.5"
     assert client.base_url == "https://example.test/v1"
+    assert client.max_tokens == 1200
+    assert client.timeout_seconds == 240
     assert client.reasoning_effort == "high"
     assert client.include_chat_template_kwargs is False
     assert redact_model_config(config["writing_llm"])["api_key"] == "***"
@@ -54,3 +56,30 @@ writing_llm:
         "embedding_timeout": 60,
         "embedding_dim": 384,
     }
+
+
+def test_build_openai_client_from_config_accepts_explicit_overrides(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+llm:
+  provider: openai
+  model_name: qwen
+  api_key: token
+  base_url: http://127.0.0.1:8001
+  max_tokens: 3072
+  timeout_seconds: 240
+  temperature: 0
+""",
+        encoding="utf-8",
+    )
+
+    client = build_openai_client_from_config(
+        load_local_config(config_path),
+        "llm",
+        overrides={"max_tokens": 1200, "timeout_seconds": 300},
+    )
+
+    assert client.max_tokens == 1200
+    assert client.timeout_seconds == 300
+    assert client.temperature == 0

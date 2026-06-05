@@ -102,6 +102,66 @@ def test_build_episodic_memory_records_evidence_offsets(tmp_path: Path) -> None:
     assert '"evidence_exact_match": true' in link
 
 
+def test_build_episodic_memory_infers_temporal_scope(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    parsed_dir = run_dir / "parsed"
+    inputs_dir = run_dir / "inputs"
+    memory_dir = tmp_path / "memory"
+    parsed_dir.mkdir(parents=True)
+    inputs_dir.mkdir(parents=True)
+    (inputs_dir / "scene_0001.json").write_text(
+        json.dumps(
+            {
+                "unit_id": "scene_0001",
+                "title": "1、INT.日.数字生命研究室",
+                "subtitle": "",
+                "content": "印度科学家说，人本质上就是一堆电信号。刘培强进入房间。",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (parsed_dir / "scene_0001.json").write_text(
+        json.dumps(
+            {
+                "status": "parsed",
+                "data": {
+                    "unit_id": "scene_0001",
+                    "episodic_memories": [
+                        {
+                            "memory_id_hint": "m1",
+                            "sequence_index": 1,
+                            "timeline_label": "scene_0001",
+                            "memory_type": "observation",
+                            "summary": "人本质上就是一堆电信号",
+                            "evidence": "人本质上就是一堆电信号",
+                            "entity_links": [],
+                        },
+                        {
+                            "memory_id_hint": "m2",
+                            "sequence_index": 2,
+                            "timeline_label": "scene_0001",
+                            "memory_type": "action",
+                            "summary": "刘培强进入房间",
+                            "evidence": "刘培强进入房间",
+                            "entity_links": [],
+                        },
+                    ],
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    summary = build_episodic_memory(run_dir, memory_dir)
+    records = _read_jsonl(memory_dir / "episodic_memories.jsonl")
+
+    assert summary["memory_temporal_scope_counts"] == {"atemporal_fact": 1, "temporal_episode": 1}
+    assert records[0]["memory_temporal_scope"] == "atemporal_fact"
+    assert records[1]["memory_temporal_scope"] == "temporal_episode"
+
+
 def test_build_episodic_memory_records_parent_chunk_offsets(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     parsed_dir = run_dir / "parsed"
@@ -382,3 +442,8 @@ def test_build_episodic_memory_skips_non_trackable_entity_links(tmp_path: Path) 
     assert summary["skipped_non_trackable_entity_memory_link_count"] == 1
     assert '"entity": "记忆"' in links
     assert "脑子" not in links
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    with path.open("r", encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle if line.strip()]

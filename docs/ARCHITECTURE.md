@@ -18,6 +18,7 @@ src/dms/
   memory/             # staged, canonical, visibility, and world-model builders
   evaluation/         # dataset eligibility and evaluation split builders
   benchmark.py        # full-script writing benchmark orchestration
+  timeline/           # diegetic temporal graph normalization, solving, reporting
   ui/                 # Gradio inspection/demo UI
   cli.py              # command-line workflows
 ```
@@ -203,6 +204,25 @@ The default benchmark policy is deliberately conservative:
   This is distinct from `style_reference`, which defaults to disabled and can
   still be enabled explicitly for surface-form experiments;
 - generated drafts are not repaired before evaluation.
+
+## Diegetic Timeline
+
+`src/dms/timeline/` is an independent temporal audit layer. It separates script
+chapter order, story-world time, and reveal time. The current command
+`run-temporal-extraction` extracts per-scene temporal events and relations, then
+builds `timeline_graph.json`, `timeline_order.jsonl`, `conflicts.json`,
+`timeline_report.md`, `temporal_audit.json`, and
+`temporal_audit_report.md`. Relation evidence that cannot be aligned to the
+current scene source is kept for audit but blocked from story-time ordering.
+
+This layer is not yet wired into memory packet filtering. Benchmark retrieval
+continues to use prefix visibility by discourse/reveal time so that past-world
+events revealed in later scenes cannot leak into earlier target scenes.
+
+`build-memory-timeline-index` can enrich `memories/episodic_memories.jsonl` with
+story-time bucket/rank fields from `timeline_graph.json`. This produces an
+auditable sidecar index and does not change the SQLite asset store or retrieval
+defaults.
 
 For existing scene-1-to-5 assets, start target runs from scene 6:
 

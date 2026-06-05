@@ -6,10 +6,12 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from dms.narrative_units import DEFAULT_UNIT_LABEL, DEFAULT_UNIT_TYPE, normalize_unit_label, normalize_unit_type
+
 
 @dataclass(frozen=True)
 class ScriptScene:
-    """Ordered scene unit from the local Wandering Earth 2 JSON fixture."""
+    """Ordered narrative unit from the local Wandering Earth 2 JSON fixture."""
 
     scene_id: str
     source_record_id: int
@@ -22,6 +24,8 @@ class ScriptScene:
     time_of_day: str | None
     location_hint: str
     character_count: int
+    unit_type: str = DEFAULT_UNIT_TYPE
+    unit_label: str = DEFAULT_UNIT_LABEL
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -38,7 +42,12 @@ _HEADING_RE = re.compile(
 )
 
 
-def load_script_scenes(path: str | Path) -> list[ScriptScene]:
+def load_script_scenes(
+    path: str | Path,
+    *,
+    unit_type: str = DEFAULT_UNIT_TYPE,
+    unit_label: str = DEFAULT_UNIT_LABEL,
+) -> list[ScriptScene]:
     """Load the source JSON and normalize it into ordered scene records."""
 
     source_path = Path(path)
@@ -46,6 +55,8 @@ def load_script_scenes(path: str | Path) -> list[ScriptScene]:
     if not isinstance(data, list):
         raise ValueError(f"Expected top-level list in script JSON: {source_path}")
 
+    normalized_unit_type = normalize_unit_type(unit_type)
+    normalized_unit_label = normalize_unit_label(unit_label, unit_type=normalized_unit_type)
     scenes: list[ScriptScene] = []
     for index, item in enumerate(data, start=1):
         if not isinstance(item, dict):
@@ -71,6 +82,8 @@ def load_script_scenes(path: str | Path) -> list[ScriptScene]:
                 time_of_day=heading["time_of_day"],
                 location_hint=heading["location_hint"],
                 character_count=len(content),
+                unit_type=normalized_unit_type,
+                unit_label=normalized_unit_label,
             )
         )
 

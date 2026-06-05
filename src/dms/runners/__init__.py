@@ -6,6 +6,7 @@ from dms.runners.scene_ordered_pipeline import SceneOrderedPipelineConfig, run_s
 from dms.runners.scene_events import SceneEventRunConfig, run_scene_events
 from dms.runners.scene_inventory import SceneInventoryRunConfig, run_scene_inventory
 from dms.runners.scene_summary import SceneSummaryRunConfig, run_scene_summary
+from dms.runners.temporal import TemporalExtractionRunConfig, run_temporal_extraction
 from dms.runners.visibility_notes import VisibilityNotesRunConfig, run_visibility_notes
 
 __all__ = [
@@ -15,6 +16,7 @@ __all__ = [
     "SceneEventRunConfig",
     "SceneInventoryRunConfig",
     "SceneSummaryRunConfig",
+    "TemporalExtractionRunConfig",
     "VisibilityNotesRunConfig",
     "run_kg_entity_mentions",
     "run_durable_relationships",
@@ -22,5 +24,6 @@ __all__ = [
     "run_scene_events",
     "run_scene_inventory",
     "run_scene_summary",
+    "run_temporal_extraction",
     "run_visibility_notes",
 ]

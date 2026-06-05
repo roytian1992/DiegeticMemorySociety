@@ -65,7 +65,14 @@ def test_build_entity_attribute_cards_from_memory_packet(tmp_path: Path) -> None
     assert card["stable_traits"][0]["status"] == "inferred"
     assert "simulation_constraints" not in card
     assert card["hard_constraints"][0]["constraint"] == "不能知道未来信息"
+    assert card["author_profile_baseline"]["stable_traits"] == ["嘴硬", "抗压"]
+    assert card["author_initial_state"]["beliefs"] == ["地球处境正在恶化"]
+    assert card["author_profile_policy"]["priority"] == "author_locked"
     assert (tmp_path / "cards" / "attribute_cards.json").is_file()
+    context = json.loads((tmp_path / "cards" / "inputs" / "character_001.json").read_text(encoding="utf-8"))
+    assert context["entity"]["author_profile"]["speaking_style"] == ["短句", "压着情绪说"]
+    assert context["character_reference_knowledge"][0]["ref_id"] == "REF:ref_liu_knows_550a"
+    assert "REF:ref_liu_knows_550a" in context["instructions"]["available_reference_ids"]
     markdown = (tmp_path / "cards" / "attribute_cards.md").read_text(encoding="utf-8")
     assert "## 刘培强 (character)" in markdown
     assert "stable traits" in markdown
@@ -73,6 +80,8 @@ def test_build_entity_attribute_cards_from_memory_packet(tmp_path: Path) -> None
     assert "hard constraints" in markdown
     assert "simulation risks" in markdown
     assert "不能知道未来信息" in markdown
+    assert "author profile baseline" in markdown
+    assert "嘴硬" in markdown
 
 
 def test_format_attribute_cards_markdown_handles_variable_sections() -> None:
@@ -94,6 +103,29 @@ def test_format_attribute_cards_markdown_handles_variable_sections() -> None:
     assert "# Entity Attribute Cards" in markdown
     assert "## 张鹏 (character)" in markdown
     assert "务实" in markdown
+
+
+def test_attribute_card_prefix_boundary_uses_narrative_unit_label(tmp_path: Path) -> None:
+    packet = _packet()
+    packet["retrieval_boundary"] = {
+        "before_unit_id": "chapter_0006",
+        "unit_type": "chapter",
+        "unit_label": "chapter",
+        "before_scene_id": "scene_0006",
+    }
+    packet_path = tmp_path / "packet.json"
+    packet_path.write_text(json.dumps(packet, ensure_ascii=False), encoding="utf-8")
+
+    summary = build_entity_attribute_cards(
+        AttributeCardConfig(
+            memory_packet_path=packet_path,
+            output_dir=tmp_path / "cards",
+            overwrite=True,
+        ),
+        llm_client=FakeAttributeCardClient(),
+    )
+
+    assert summary["cards"][0]["prefix_boundary"] == "before chapter_0006"
 
 
 def test_attribute_cards_demote_unsupported_formal_roles(tmp_path: Path) -> None:
@@ -140,6 +172,14 @@ def _packet() -> dict:
                 "entity_type": "character",
                 "profile": "刘培强是飞行员。",
                 "current_state": "准备返航。",
+                "author_profile": {
+                    "stable_traits": ["嘴硬", "抗压"],
+                    "speaking_style": ["短句", "压着情绪说"],
+                    "behavior_constraints": ["不能提前知道未来剧情"],
+                },
+                "author_profile_summary": "traits=嘴硬、抗压；speaking_style=短句、压着情绪说",
+                "initial_state": {"beliefs": ["地球处境正在恶化"]},
+                "profile_policy": {"priority": "author_locked", "visibility": "author_guidance"},
                 "source_refs": ["R1"],
                 "related_memory_index": ["M1"],
             },
@@ -166,5 +206,25 @@ def _packet() -> dict:
                 "scene_id": "scene_0005",
                 "text": "刘培强驾驶J20C。",
             }
+        ],
+        "character_reference_knowledge": [
+            {
+                "item_id": "ref_liu_knows_550a",
+                "item_type": "character_profile",
+                "subject": "刘培强",
+                "statement": "刘培强知道550A能够分析脑电波。",
+                "knowledge_scope": "character_private",
+                "known_to": ["刘培强"],
+                "available_from": "story_start",
+            },
+            {
+                "item_id": "ref_zhang_private",
+                "item_type": "character_profile",
+                "subject": "张鹏",
+                "statement": "张鹏知道另一条私密设定。",
+                "knowledge_scope": "character_private",
+                "known_to": ["张鹏"],
+                "available_from": "story_start",
+            },
         ],
     }

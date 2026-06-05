@@ -6,6 +6,7 @@ from typing import Any
 
 from dms.entity_alignment import align_entity_to_candidates, build_entity_candidate_index
 from dms.entity_types import entity_trackability_issue, is_deictic_surface, normalize_entity_type
+from dms.memory.temporal_scope import infer_memory_temporal_scope
 from dms.memory.unit_metadata import parent_evidence_span, unit_metadata
 from dms.source_evidence import build_source_text_index, locate_evidence
 
@@ -45,6 +46,7 @@ def build_episodic_memory(
         "rejected_entity_memory_link_count": 0,
     }
     evidence_counts: dict[str, int] = {"exact": 0, "fuzzy_aligned": 0, "rejected": 0}
+    temporal_scope_counts: dict[str, int] = {}
 
     with (
         memories_path.open("w", encoding="utf-8") as memories_handle,
@@ -95,10 +97,14 @@ def build_episodic_memory(
                         "timeline_index": _timeline_index(scene_id, sequence_index),
                         "timeline_label": item.get("timeline_label", ""),
                         "memory_type": item.get("memory_type", ""),
+                        "memory_temporal_scope": item.get("memory_temporal_scope", ""),
+                        "memory_temporal_scope_confidence": item.get("memory_temporal_scope_confidence"),
+                        "memory_temporal_scope_reason": item.get("memory_temporal_scope_reason", ""),
                         "summary": item.get("summary", ""),
                         **evidence_record,
                         "source_text_index": source_text_index,
                     }
+                    memory_record.update(infer_memory_temporal_scope(memory_record))
                     links = _as_list(item.get("entity_links"))
                 else:
                     evidence_record = _verified_evidence("", unit_payload)
@@ -130,8 +136,10 @@ def build_episodic_memory(
                         **evidence_record,
                         "source_text_index": source_text_index,
                     }
+                    memory_record.update(infer_memory_temporal_scope(memory_record))
                     links = []
                 _count_evidence_status(evidence_counts, evidence_record)
+                _count_temporal_scope(temporal_scope_counts, memory_record)
                 _write_jsonl(memories_handle, memory_record)
                 counts["episodic_memory_count"] += 1
 
@@ -195,6 +203,7 @@ def build_episodic_memory(
             "summary": str(summary_path),
         },
         "evidence_verification_counts": evidence_counts,
+        "memory_temporal_scope_counts": temporal_scope_counts,
         "rejected_evidence_count": evidence_counts.get("rejected", 0),
         **counts,
     }
@@ -299,6 +308,11 @@ def _verified_evidence(evidence: Any, unit_payload: dict[str, Any] | None) -> di
 def _count_evidence_status(counts: dict[str, int], record: dict[str, Any]) -> None:
     status = str(record.get("evidence_verification_status") or "rejected")
     counts[status] = counts.get(status, 0) + 1
+
+
+def _count_temporal_scope(counts: dict[str, int], record: dict[str, Any]) -> None:
+    scope = str(record.get("memory_temporal_scope") or "uncertain")
+    counts[scope] = counts.get(scope, 0) + 1
 
 
 def _evidence_rejected(record: dict[str, Any]) -> bool:

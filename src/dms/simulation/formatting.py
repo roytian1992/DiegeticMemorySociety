@@ -16,6 +16,8 @@ def format_social_simulation_markdown(summary: dict[str, Any]) -> str:
         lines.append(f"- target scene text visible: {visible}")
     lines.append(f"- character simulations: {summary.get('character_simulation_count', 0)}")
 
+    _append_scene_disposition_notes(lines, summary.get("scene_disposition_notes"))
+
     character_simulations = summary.get("character_simulations") or []
     if character_simulations:
         lines.append("")
@@ -74,6 +76,7 @@ def format_social_simulation_writer_packet(summary: dict[str, Any]) -> str:
     if source_isolation:
         visible = "yes" if source_isolation.get("target_scene_text_visible") else "no"
         lines.append(f"- target scene text visible: {visible}")
+    _append_scene_disposition_notes(lines, summary.get("scene_disposition_notes"))
     plan = summary.get("algorithmic_social_plan") or {}
     metrics = plan.get("metrics") or {}
     if metrics:
@@ -141,6 +144,7 @@ def format_social_simulation_writer_packet(summary: dict[str, Any]) -> str:
     lines.append("- This packet is behavior guidance, not a fact source.")
     lines.append("- Follow the writing request and memory packet before this packet.")
     lines.append("- Treat all beats as optional interaction functions.")
+    lines.append("- Scene disposition notes are behavior priors, not fact sources.")
     lines.append("- Do not copy any wording from simulation artifacts as final prose.")
     lines.append("- Prefer concrete action, cockpit/environment pressure, and short dialogue posture.")
     return "\n".join(lines).rstrip() + "\n"
@@ -159,6 +163,21 @@ def _append_items(lines: list[str], label: str, items: Any, value_key: str) -> N
         status = item.get("status")
         meta = f" ({status}; {refs})" if status or refs else ""
         lines.append(f"- {value}{meta}")
+
+
+def _append_scene_disposition_notes(lines: list[str], notes: Any) -> None:
+    if not notes:
+        return
+    lines.append("")
+    lines.append("## Scene Disposition Notes")
+    for note in notes:
+        if not isinstance(note, dict):
+            continue
+        text = str(note.get("scene_disposition_note") or "").strip()
+        if not text:
+            continue
+        name = note.get("canonical_name") or note.get("entity_id") or "unknown"
+        lines.append(f"- {name}: {text}")
 
 
 def _append_simple_list(lines: list[str], label: str, items: Any) -> None:

@@ -18,23 +18,29 @@ def load_local_config(path: str | Path = "configs/local_config.yaml") -> dict[st
     return payload
 
 
-def build_openai_client_from_config(config: dict[str, Any], section: str) -> OpenAIChatClient:
+def build_openai_client_from_config(
+    config: dict[str, Any],
+    section: str,
+    *,
+    overrides: dict[str, Any] | None = None,
+) -> OpenAIChatClient:
     block = config.get(section)
     if not isinstance(block, dict):
         raise ValueError(f"Missing config section: {section}")
     provider = str(block.get("provider") or "openai").strip().lower()
     if provider != "openai":
         raise ValueError(f"Only openai-compatible config is supported for {section}: {provider}")
+    values = {**block, **{key: value for key, value in (overrides or {}).items() if value is not None}}
     return OpenAIChatClient(
-        model=block.get("model_name") or block.get("model"),
-        base_url=block.get("base_url"),
-        api_key=block.get("api_key"),
-        max_tokens=int(block.get("max_tokens") or 2048),
-        temperature=float(block.get("temperature") or 0),
-        timeout_seconds=int(block.get("timeout_seconds") or block.get("timeout") or 120),
-        enable_thinking=bool(block.get("enable_thinking", False)),
-        reasoning_effort=block.get("reasoning_effort"),
-        include_chat_template_kwargs=bool(block.get("include_chat_template_kwargs", True)),
+        model=values.get("model_name") or values.get("model"),
+        base_url=values.get("base_url"),
+        api_key=values.get("api_key"),
+        max_tokens=int(values.get("max_tokens") or 2048),
+        temperature=float(values.get("temperature") or 0),
+        timeout_seconds=int(values.get("timeout_seconds") or values.get("timeout") or 120),
+        enable_thinking=bool(values.get("enable_thinking", False)),
+        reasoning_effort=values.get("reasoning_effort"),
+        include_chat_template_kwargs=bool(values.get("include_chat_template_kwargs", True)),
     )
 
 

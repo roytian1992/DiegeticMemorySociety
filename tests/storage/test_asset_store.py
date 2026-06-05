@@ -53,6 +53,7 @@ def test_asset_store_imports_entities_memories_and_time_queries(tmp_path: Path) 
     assert [memory["memory_id"] for memory in memories] == ["scene_0001_memory_001"]
     assert memories[0]["summary"] == "550A分析受试者脑电波"
     assert memories[0]["evidence_text"] == "量子计算机550A 正在对他的脑电波进行分析处理"
+    assert memories[0]["memory_temporal_scope"] == "atemporal_fact"
 
     assert get_entity_memories(db_path, entity_ref="培强", before_scene_id="scene_0003") == []
     liu_memories = get_entity_memories(db_path, entity_ref="培强", before_scene_id="scene_0005")
@@ -68,6 +69,10 @@ def test_asset_store_imports_entities_memories_and_time_queries(tmp_path: Path) 
 
     matches = resolve_entity_refs(db_path, ["培强", "量子计算机550A", "550"], limit_per_ref=1)
     assert [match["canonical_name"] for match in matches] == ["刘培强", "550A", "550A"]
+    assert matches[0]["author_profile"]["stable_traits"] == ["嘴硬", "抗压"]
+    assert matches[0]["author_profile"]["behavior_constraints"] == ["不能提前知道未来剧情"]
+    assert matches[0]["initial_state"]["beliefs"] == ["地球处境正在恶化"]
+    assert matches[0]["profile_policy"]["priority"] == "author_locked"
 
     relationships = get_one_hop_relationships(
         db_path,
@@ -117,6 +122,17 @@ def _write_sample_ordered_run(tmp_path: Path) -> Path:
                 "aliases": ["培强"],
                 "first_seen_scene": "scene_0004",
                 "mention_count": 1,
+                "author_description": "作者设定里的年轻飞行员",
+                "initial_description": "作者设定里的年轻飞行员",
+                "author_profile": {
+                    "stable_traits": ["嘴硬", "抗压"],
+                    "speaking_style": ["短句", "压着情绪说"],
+                    "behavior_constraints": ["不能提前知道未来剧情"],
+                },
+                "initial_state": {"beliefs": ["地球处境正在恶化"]},
+                "profile_policy": {"priority": "author_locked", "visibility": "author_guidance"},
+                "profile_sources": [{"source": "author_context", "path": "author_entities.json"}],
+                "author_entity_ids": ["author_character_0001"],
             },
         ],
     )
@@ -165,6 +181,7 @@ def _write_sample_ordered_run(tmp_path: Path) -> Path:
                 "sequence_index": 1,
                 "timeline_index": "scene_0001:001",
                 "memory_type": "observation",
+                "memory_temporal_scope": "atemporal_fact",
                 "summary": "550A分析受试者脑电波",
                 "evidence_text": "量子计算机550A 正在对他的脑电波进行分析处理",
                 "evidence_start": 0,
@@ -181,6 +198,7 @@ def _write_sample_ordered_run(tmp_path: Path) -> Path:
                 "sequence_index": 2,
                 "timeline_index": "scene_0004:002",
                 "memory_type": "action",
+                "memory_temporal_scope": "temporal_episode",
                 "summary": "刘培强返航途中情绪焦躁",
                 "evidence_text": "刘培强一直沉默地望向窗外",
                 "parent_source_sha256": "sha4",

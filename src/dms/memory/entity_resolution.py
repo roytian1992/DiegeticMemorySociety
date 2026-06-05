@@ -210,6 +210,7 @@ def build_entity_resolution_artifacts(
         "source_world_model": str(Path(world_model_path_or_dir)),
         "output_dir": str(out_path),
         "entity_count": len(entities),
+        "author_profile_count": sum(1 for entity in entities if entity.get("author_profile")),
         "alias_count": len(alias_records),
         "resolution_trace_count": len(resolution_traces),
         "relationship_update_count": len(relationship_updates),
@@ -332,7 +333,13 @@ def _resolve_mentions(mentions: list[dict[str, Any]]) -> tuple[list[dict[str, An
         entity_type = _choose_entity_type([str(item["entity_type"]) for item in items])
         canonical_name = _choose_canonical_name(canonical_candidates or names)
         descriptions = _choose_descriptions(items)
-        author_descriptions = _choose_descriptions([item for item in items if item.get("source") == "author_defined"])
+        author_items = [item for item in items if item.get("source") == "author_defined"]
+        author_descriptions = _choose_descriptions(author_items)
+        author_profile = _merge_profile_objects(item.get("author_profile") for item in author_items)
+        initial_state = _merge_profile_objects(item.get("initial_state") for item in author_items)
+        profile_policy = _merge_profile_objects(item.get("profile_policy") for item in author_items)
+        profile_sources = _merge_json_lists(item.get("profile_sources") for item in author_items)
+        author_entity_ids = sorted({str(item.get("author_entity_id")) for item in author_items if item.get("author_entity_id")})
         entity_id = f"{entity_type}_{index:04d}"
         alias_names = [*names, *canonical_candidates]
         aliases = sorted({alias for name in alias_names for alias in resolve_name_variants(name)})
@@ -351,6 +358,11 @@ def _resolve_mentions(mentions: list[dict[str, Any]]) -> tuple[list[dict[str, An
             "descriptions": descriptions,
             "author_description": author_descriptions[0] if author_descriptions else "",
             "initial_description": author_descriptions[0] if author_descriptions else (descriptions[0] if descriptions else ""),
+            "author_profile": author_profile,
+            "initial_state": initial_state,
+            "profile_policy": profile_policy,
+            "profile_sources": profile_sources,
+            "author_entity_ids": author_entity_ids,
             "description_sources": _description_sources(items),
         }
         entities.append(entity)
@@ -499,8 +511,9 @@ def _mention(
     *,
     canonical_hint: str = "",
     description: str = "",
+    extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    payload = {
         "name": name,
         "entity_type": entity_type,
         "scene_id": scene_id,
@@ -510,11 +523,14 @@ def _mention(
         "evidence": record.get("evidence", "") or record.get("summary", "") or record.get("content", ""),
         "invalid_surface": _is_invalid_entity_surface(name, record),
     }
+    if extra:
+        payload.update(extra)
+    return payload
 
 
 def _author_entity_mentions(author_entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
     mentions: list[dict[str, Any]] = []
-    for entity in author_entities:
+    for index, entity in enumerate(author_entities, start=1):
         if not isinstance(entity, dict):
             continue
         canonical_name = str(entity.get("canonical_name") or entity.get("name") or "").strip()
@@ -522,6 +538,7 @@ def _author_entity_mentions(author_entities: list[dict[str, Any]]) -> list[dict[
             continue
         entity_type = normalize_entity_type(entity.get("entity_type") or entity.get("type") or "character")
         description = str(entity.get("author_description") or entity.get("description") or "").strip()
+        extra = _author_entity_profile_payload(entity, index=index, entity_type=entity_type)
         mentions.append(
             _mention(
                 canonical_name,
@@ -531,6 +548,7 @@ def _author_entity_mentions(author_entities: list[dict[str, Any]]) -> list[dict[
                 {"evidence": "", "description": description},
                 canonical_hint=canonical_name,
                 description=description,
+                extra=extra,
             )
         )
         for alias in _as_list(entity.get("aliases")):
@@ -545,9 +563,23 @@ def _author_entity_mentions(author_entities: list[dict[str, Any]]) -> list[dict[
                         {"evidence": "", "description": description},
                         canonical_hint=canonical_name,
                         description=description,
+                        extra=extra,
                     )
                 )
     return mentions
+
+
+def _author_entity_profile_payload(entity: dict[str, Any], *, index: int, entity_type: str) -> dict[str, Any]:
+    profile_sources = entity.get("profile_sources") if isinstance(entity.get("profile_sources"), list) else []
+    if not profile_sources and (entity.get("author_profile") or entity.get("initial_state")):
+        profile_sources = [{"source": "author_defined", "record_index": index}]
+    return {
+        "author_entity_id": entity.get("entity_id") or entity.get("id") or f"author_{entity_type}_{index:04d}",
+        "author_profile": entity.get("author_profile") if isinstance(entity.get("author_profile"), dict) else {},
+        "initial_state": entity.get("initial_state") if isinstance(entity.get("initial_state"), dict) else {},
+        "profile_policy": entity.get("profile_policy") if isinstance(entity.get("profile_policy"), dict) else {},
+        "profile_sources": profile_sources,
+    }
 
 
 def _is_invalid_entity_surface(name: object, record: dict[str, Any]) -> bool:
@@ -641,6 +673,60 @@ def _description_sources(items: list[dict[str, Any]]) -> list[dict[str, str]]:
         )
         seen.add(key)
     return sources
+
+
+def _merge_profile_objects(values: Any) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        merged = _merge_profile_dict(merged, value)
+    return merged
+
+
+def _merge_profile_dict(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(left)
+    for key, value in right.items():
+        if value in (None, "", [], {}):
+            continue
+        current = merged.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            merged[key] = _merge_profile_dict(current, value)
+        elif isinstance(current, list) or isinstance(value, list):
+            merged[key] = _dedupe_json_values([*_value_list(current), *_value_list(value)])
+        elif current in (None, "", [], {}):
+            merged[key] = value
+        elif current != value:
+            merged[key] = _dedupe_json_values([current, value])
+    return merged
+
+
+def _merge_json_lists(values: Any) -> list[Any]:
+    merged: list[Any] = []
+    for value in values:
+        if isinstance(value, list):
+            merged.extend(item for item in value if item not in (None, "", [], {}))
+        elif value not in (None, "", [], {}):
+            merged.append(value)
+    return _dedupe_json_values(merged)
+
+
+def _value_list(value: Any) -> list[Any]:
+    if value in (None, "", [], {}):
+        return []
+    return value if isinstance(value, list) else [value]
+
+
+def _dedupe_json_values(values: list[Any]) -> list[Any]:
+    deduped: list[Any] = []
+    seen: set[str] = set()
+    for value in values:
+        key = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+        if key in seen:
+            continue
+        deduped.append(value)
+        seen.add(key)
+    return deduped
 
 
 def _name_parts(name: str) -> dict[str, Any]:

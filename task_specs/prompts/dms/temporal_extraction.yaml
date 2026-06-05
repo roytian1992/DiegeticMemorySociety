@@ -1,0 +1,135 @@
+id: temporal_extraction
+category: dms
+name: Diegetic Temporal Extraction
+description: >
+  Extract story-world temporal events and temporal relation candidates from one ordered narrative unit.
+
+task_variables:
+  - name: unit_json
+    type: string
+    required: true
+    description: JSON object for one ordered narrative unit.
+  - name: prior_timeline
+    type: string
+    required: false
+    description: Optional prior timeline report or graph.
+  - name: previous_scene_id
+    type: string
+    required: false
+    description: Previous discourse scene id, if any.
+  - name: next_scene_id
+    type: string
+    required: false
+    description: Next discourse scene id, if any.
+
+static_variables:
+  - name: extraction_policy
+    type: string
+    required: true
+    description: Project-level temporal extraction rules.
+
+template: |
+  # Task
+  Extract a diegetic temporal layer for the current narrative unit.
+
+  # Purpose
+  Separate three clocks:
+  - discourse order: where the text appears in the script;
+  - story/world time: when events happen inside the fictional world;
+  - reveal time: where the text reveals the event or fact.
+
+  # Source Rules
+  Base every temporal event and relation on the current narrative-unit text.
+  Use prior timeline only for naming continuity and duplicate avoidance.
+  Do not treat script chapter order as hard world-time evidence unless the current text supports it.
+  If the input is Chinese, write summary, participants, location, warnings, and rationale-like fields in Chinese. Keep only exact codes, acronyms, and official names as written.
+  Treat title, subtitle, and content as source text. For empty-content visual scenes, use the most specific subtitle evidence before the title.
+  Extract a compact temporal layer, not a shot-by-shot action list. Prefer 3-6 salient temporal events for a long scene, and never emit more than 8 events or 8 relations for one unit.
+
+  # Global Constraints
+  {extraction_policy}
+
+  # Prior Timeline
+  {prior_timeline}
+
+  # Discourse Neighbors
+  previous_scene_id: {previous_scene_id}
+  next_scene_id: {next_scene_id}
+
+  # Output Format
+  Return exactly one JSON object using this schema. Include no Markdown or commentary.
+
+  {
+    "unit_id": "string",
+    "temporal_events": [
+      {
+        "event_id": "string",
+        "summary": "string",
+        "participants": ["string"],
+        "location": "string",
+        "event_track": "plot | context | forecast | memory | hypothetical | unknown",
+        "event_time_mode": "present_scene | past_recalled | future_anticipated | habitual | hypothetical | uncertain",
+        "story_time_hint": "string",
+        "granularity": "absolute_date | year | season | day | time_of_day | scene_relative | event_relative | unknown",
+        "evidence": "string",
+        "confidence": 0.0,
+        "revealed_at_scene_id": "string"
+      }
+    ],
+    "temporal_relations": [
+      {
+        "source_event_id": "string",
+        "target_event_id": "string",
+        "relation_type": "before | after | overlaps | same_time | contains | causes | anticipates | claims | reveals_past | uncertain",
+        "evidence": "string",
+        "confidence": 0.0,
+        "is_inferred": false
+      }
+    ],
+    "scene_temporal_index": {
+      "dominant_time_mode": "present_scene | past_recalled | future_anticipated | habitual | hypothetical | uncertain",
+      "scene_temporal_role": "plot_scene | visual_context | montage | exposition | forecast | memory_or_flashback | mixed | unknown",
+      "relative_to_previous_scene": "after | before | overlaps | same_time | discontinuous | unknown",
+      "absolute_time_hints": ["string"],
+      "relative_time_hints": ["string"],
+      "contains_flashback_or_recalled_past": false,
+      "contains_parallel_or_overlap": false,
+      "confidence": 0.0,
+      "evidence": "string"
+    },
+    "temporal_warnings": [
+      {
+        "warning_type": "string",
+        "detail": "string",
+        "evidence": "string"
+      }
+    ]
+  }
+
+  # Field Rules
+  - unit_id must match the current narrative unit id.
+  - event_id must be stable within the unit, for example scene_0006:event_001.
+  - evidence must be a short verbatim span from title, subtitle, or content. Do not use explanatory paraphrases as evidence. Do not use ellipses unless the ellipsis appears in the source.
+  - Keep evidence compact: use one contiguous source span, usually under 40 Chinese characters or 80 English characters.
+  - Do not stitch multiple source spans together. If one relation needs multiple pieces of text, choose the single clearest span and lower confidence.
+  - absolute_time_hints and relative_time_hints must also be short verbatim source spans, not normalized paraphrases and not multi-span phrases joined with ellipses.
+  - If a warning covers multiple time cues, cite only the single clearest cue in warning.evidence and describe the combination in warning.detail.
+  - Merge adjacent actions into one event when they form one beat, for example a character walking through a scene and observing details.
+  - Do not enumerate every visual shot, camera movement, object detail, or background action. Keep only temporal anchors needed for story-world ordering.
+  - Emit at most 6 temporal_events unless the scene contains clear flashback/forecast/parallel-time complexity; absolute hard maximum is 8.
+  - Emit at most 6 temporal_relations unless necessary; absolute hard maximum is 8.
+  - revealed_at_scene_id is normally the current unit id because extraction only sees this unit's text.
+  - event_track=plot for concrete character action, dialogue action, decisions, and direct scene events.
+  - event_track=context for visual-only world-state images, establishing shots, environmental changes, or montage panels with no character action.
+  - event_track=forecast for predictions, plans, forecasts, promises about future events, or narrated future claims. Use relation_type=anticipates or claims to connect current speech/reveal to the forecast target; do not force forecast targets into the main plot chain.
+  - event_track=memory for flashbacks, memories, narrated backstory, or dialogue that reveals a past event.
+  - For memory and forecast events, summarize the world event being remembered or anticipated. Keep the speaker/reveal action in evidence and revealed_at_scene_id, not as the whole event summary.
+  - relation_type=before means source_event_id happens before target_event_id in story/world time; relation_type=after means source_event_id happens after target_event_id. Prefer before when possible to avoid direction ambiguity.
+  - Use past_recalled for flashbacks, memories, narrated backstory, or dialogue that reveals a past event.
+  - Use future_anticipated only for plans, forecasts, or explicit future claims, not for reader knowledge.
+  - For subtitle-only montage panels such as "冰川融化" or "海啸爆发", emit one context event with subtitle as evidence and scene_temporal_role=montage or visual_context.
+  - Use temporal_warnings when the scene uses montage, parallel cutting, ambiguous flashback, or contradictory cues.
+  - Use empty arrays when a list has no supported items.
+
+  # Current Narrative Unit
+  {unit_json}

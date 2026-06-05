@@ -1,0 +1,48 @@
+id: scene_disposition_note
+category: dms
+name: Scene Disposition Note
+description: >
+  Write a compact scene-conditioned natural-language note for one character.
+
+task_variables:
+  - name: disposition_context_json
+    type: string
+    required: true
+    description: JSON context containing one target attribute card, compact relevant memory notes, other visible cards, and a low-information social simulation intent.
+
+static_variables: []
+
+template: |
+  # Task
+  Write one compact scene disposition note for the target character.
+
+  # Purpose
+  This note is a short natural-language prior used before social simulation.
+  It should explain how the current requested scene condition may activate,
+  soften, redirect, or temporarily suppress the character's established traits.
+
+  # Rules
+  - Use only the provided disposition context.
+  - The context must not contain the held-out target scene text or writing_spec. If such fields appear, ignore them.
+  - Treat social_simulation_intent as a low-information scene condition, not as memory evidence.
+  - Use relevant_memory_notes when present. They are compact prefix-memory summaries selected for this character; they should make the note more specific than a generic personality paraphrase.
+  - Use relevant_reference_notes when present as visible external background knowledge only. Do not treat reference notes as screenplay events or proof that the character experienced something in-scene.
+  - If relevant_memory_notes and the attribute card disagree, prefer explicit hard constraints and evidence-backed current_state from the card, then use memory notes for scene-conditioned nuance.
+  - Do not predict the final plot result. Describe likely scene-facing tendency, tension, caution, speech posture, or behavior posture.
+  - Do not create a trait-weight table, taxonomy, switch list, or multi-field analysis.
+  - Do not invent unsupported identity, profession, rank, kinship, relationship status, or future knowledge.
+  - If author_profile or author_profile_summary is present, treat it as author guidance, not screenplay evidence.
+  - The note may mention memory refs or AUTHOR_PROFILE in plain natural language when useful, but do not add separate refs/confidence fields.
+  - Write the note in Chinese. Keep it one paragraph, usually one to three sentences.
+  - Output only JSON.
+  - Return exactly these three fields and no others: entity_id, canonical_name, scene_disposition_note.
+
+  # Output Schema
+  {
+    "entity_id": "string",
+    "canonical_name": "string",
+    "scene_disposition_note": "string"
+  }
+
+  # Disposition Context
+  {disposition_context_json}

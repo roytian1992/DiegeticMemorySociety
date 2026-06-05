@@ -30,6 +30,7 @@ class SocialSimulationConfig:
     attribute_cards_path: Path
     output_dir: Path
     social_simulation_intent: str = ""
+    scene_disposition_notes_path: Path | None = None
     prompt_dir: Path = Path("task_specs/prompts")
     overwrite: bool = False
     writing_intent: str = ""
@@ -45,6 +46,7 @@ def run_social_simulation(config: SocialSimulationConfig, llm_client: LLMClient)
 
     cards_payload = json.loads(Path(config.attribute_cards_path).read_text(encoding="utf-8"))
     cards = _extract_cards(cards_payload)
+    scene_disposition_notes = _load_scene_disposition_notes(config.scene_disposition_notes_path)
     social_simulation_intent = _resolve_social_simulation_intent(config)
     loader = YAMLPromptLoader(config.prompt_dir)
     calls: list[dict[str, Any]] = []
@@ -55,6 +57,7 @@ def run_social_simulation(config: SocialSimulationConfig, llm_client: LLMClient)
             card,
             cards=cards,
             social_simulation_intent=social_simulation_intent,
+            scene_disposition_notes=scene_disposition_notes,
         )
         _assert_no_forbidden_source_context(context, path=f"character:{card.get('canonical_name') or card.get('entity_id')}")
         call_id = f"character_{_safe_id(card.get('entity_id') or card.get('canonical_name'))}"
@@ -77,6 +80,7 @@ def run_social_simulation(config: SocialSimulationConfig, llm_client: LLMClient)
         "social_simulation_intent": social_simulation_intent,
         "prefix_boundary": _prefix_boundary(cards),
         "attribute_cards": cards,
+        "scene_disposition_notes": scene_disposition_notes,
         "character_simulations": character_simulations,
     }
     _assert_no_forbidden_source_context(coordinator_context, path="coordinator")
@@ -117,14 +121,19 @@ def run_social_simulation(config: SocialSimulationConfig, llm_client: LLMClient)
         },
         "inputs": {
             "attribute_cards_path": str(config.attribute_cards_path),
+            "scene_disposition_notes_path": str(config.scene_disposition_notes_path)
+            if config.scene_disposition_notes_path
+            else None,
             "social_simulation_intent": social_simulation_intent,
             "card_count": len(cards),
+            "scene_disposition_note_count": len(scene_disposition_notes),
             "source_isolation": {
                 "target_scene_text_visible": False,
                 "writing_spec_visible": False,
                 "allowed_new_scene_source": "social_simulation_intent",
             },
         },
+        "scene_disposition_notes": scene_disposition_notes,
         "character_simulation_count": len(character_simulations),
         "character_simulations": character_simulations,
         "social_simulation": social_simulation,
@@ -208,13 +217,42 @@ def _extract_cards(payload: Any) -> list[dict[str, Any]]:
     return [dict(card) for card in cards if isinstance(card, dict)]
 
 
+def _load_scene_disposition_notes(path: Path | None) -> list[dict[str, str]]:
+    if path is None:
+        return []
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if isinstance(payload, list):
+        records = payload
+    elif isinstance(payload, dict) and isinstance(payload.get("scene_disposition_notes"), list):
+        records = payload["scene_disposition_notes"]
+    else:
+        records = []
+    notes: list[dict[str, str]] = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        note = str(record.get("scene_disposition_note") or "").strip()
+        if not note:
+            continue
+        notes.append(
+            {
+                "entity_id": str(record.get("entity_id") or ""),
+                "canonical_name": str(record.get("canonical_name") or ""),
+                "scene_disposition_note": note,
+            }
+        )
+    return notes
+
+
 def _build_character_simulation_context(
     card: dict[str, Any],
     *,
     cards: list[dict[str, Any]],
     social_simulation_intent: str,
+    scene_disposition_notes: list[dict[str, str]],
 ) -> dict[str, Any]:
     target_name = str(card.get("canonical_name") or "")
+    target_note = _find_scene_disposition_note(card, scene_disposition_notes)
     other_cards = [
         _compact_peer_card(peer)
         for peer in cards
@@ -223,6 +261,7 @@ def _build_character_simulation_context(
     return {
         "social_simulation_intent": social_simulation_intent,
         "target_card": card,
+        "scene_disposition_note": target_note,
         "other_visible_cards": other_cards,
         "instructions": {
             "output_language": "Chinese",
@@ -230,8 +269,21 @@ def _build_character_simulation_context(
             "target_scene_text_visible": False,
             "writing_spec_visible": False,
             "use_only_intent_and_prefix_cards": True,
+            "scene_disposition_note_policy": "Use as scene-conditioned behavior guidance; do not treat as memory evidence.",
         },
     }
+
+
+def _find_scene_disposition_note(card: dict[str, Any], notes: list[dict[str, str]]) -> str:
+    entity_id = str(card.get("entity_id") or "")
+    canonical_name = str(card.get("canonical_name") or "")
+    for note in notes:
+        if entity_id and note.get("entity_id") == entity_id:
+            return str(note.get("scene_disposition_note") or "")
+    for note in notes:
+        if canonical_name and note.get("canonical_name") == canonical_name:
+            return str(note.get("scene_disposition_note") or "")
+    return ""
 
 
 def _compact_peer_card(card: dict[str, Any]) -> dict[str, Any]:

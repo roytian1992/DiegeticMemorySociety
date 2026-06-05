@@ -26,6 +26,7 @@ template: |
   - The coordinator context must not contain the held-out target scene text or writing_spec. If such fields appear, ignore them.
   - Do not write final prose.
   - Treat social_simulation_intent as low-information desired new-scene conditions, not as memory evidence.
+  - If coordinator_context contains scene_disposition_notes, treat them as scene-conditioned behavior priors for coordination. They are guidance, not memory evidence, and should not be copied verbatim.
   - If social_simulation_intent asks for a tone or voice, such as "old-soldier voice", keep it as a requested dialogue texture. Do not rewrite it as established identity, career, rank, or biography.
   - Keep scene_beats aligned with the social simulation intent, but avoid adding unsupported facts.
   - Preserve tension between characters when supported; do not force agreement or conflict.
