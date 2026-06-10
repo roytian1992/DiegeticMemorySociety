@@ -31,6 +31,7 @@ def build_openai_client_from_config(
     if provider != "openai":
         raise ValueError(f"Only openai-compatible config is supported for {section}: {provider}")
     values = {**block, **{key: value for key, value in (overrides or {}).items() if value is not None}}
+    include_chat_template_kwargs = values.get("include_chat_template_kwargs", True)
     return OpenAIChatClient(
         model=values.get("model_name") or values.get("model"),
         base_url=values.get("base_url"),
@@ -40,8 +41,25 @@ def build_openai_client_from_config(
         timeout_seconds=int(values.get("timeout_seconds") or values.get("timeout") or 120),
         enable_thinking=bool(values.get("enable_thinking", False)),
         reasoning_effort=values.get("reasoning_effort"),
-        include_chat_template_kwargs=bool(values.get("include_chat_template_kwargs", True)),
+        thinking=_normalise_thinking_config(values.get("thinking")),
+        include_chat_template_kwargs=_normalise_bool(include_chat_template_kwargs),
     )
+
+
+def _normalise_thinking_config(value: Any) -> dict[str, Any] | None:
+    if value is None or value is False:
+        return None
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str) and value.strip():
+        return {"type": value.strip()}
+    raise ValueError("thinking config must be a mapping, string, false, or null")
+
+
+def _normalise_bool(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() not in {"0", "false", "no", "off"}
+    return bool(value)
 
 
 def embedding_kwargs_from_config(config: dict[str, Any], section: str = "embedding") -> dict[str, Any]:

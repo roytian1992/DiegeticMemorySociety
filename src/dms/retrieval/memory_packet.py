@@ -50,12 +50,15 @@ class MemoryPacketConfig:
     include_reference_context: bool = False
     reference_db_path: Path | None = None
     reference_chroma_dir: Path | None = None
-    reference_collection_name: str = "dms_reference_documents"
+    reference_collection_name: str = "dms_reference_knowledge"
     reference_top_k: int = 6
     reference_author_top_k: int = 6
     reference_character_top_k: int = 6
     reference_style_top_k: int = 4
     reference_timeline_top_k: int = 4
+    include_reference_fact_properties: bool = True
+    reference_fact_binding_top_k: int = 4
+    reference_property_binding_top_k: int = 3
 
 
 def decompose_writing_intent(
@@ -692,6 +695,9 @@ def _retrieve_reference_context(
             character_top_k=config.reference_character_top_k,
             style_top_k=config.reference_style_top_k,
             timeline_top_k=config.reference_timeline_top_k,
+            include_fact_properties=config.include_reference_fact_properties,
+            fact_binding_top_k=config.reference_fact_binding_top_k,
+            property_binding_top_k=config.reference_property_binding_top_k,
             embedding_dim=config.embedding_dim,
             embedding_provider=config.embedding_provider,
             embedding_model=config.embedding_model,

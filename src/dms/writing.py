@@ -57,6 +57,7 @@ class SocialWritingGenerationConfig:
     attribute_cards_path: Path
     social_simulation_path: Path
     output_dir: Path
+    creative_context_packet_path: Path | None = None
     model_config_path: Path = Path("configs/local_config.yaml")
     model_section: str = "writing_llm"
     prompt_dir: Path = Path("task_specs/prompts")
@@ -99,12 +100,18 @@ def generate_writing_with_social_simulation_client(
     style_reference = _read_style_reference(config)
     if style_reference:
         (output_dir / "style_reference.md").write_text(style_reference.rstrip() + "\n", encoding="utf-8")
+    memory_packet = Path(config.memory_packet_path).read_text(encoding="utf-8")
+    creative_context_packet = _read_creative_context_packet(config.creative_context_packet_path)
+    combined_memory_context = _combine_memory_and_creative_context(
+        memory_packet=memory_packet,
+        creative_context_packet=creative_context_packet,
+    )
 
     prompt = YAMLPromptLoader(config.prompt_dir).render(
         "dms/writing_generation_social",
         task_values={
             "writing_request": config.writing_request,
-            "memory_packet": Path(config.memory_packet_path).read_text(encoding="utf-8"),
+            "memory_packet": combined_memory_context,
             "attribute_cards": Path(config.attribute_cards_path).read_text(encoding="utf-8"),
             "social_simulation": Path(config.social_simulation_path).read_text(encoding="utf-8"),
             "previous_scene_context": previous_scene_context,
@@ -141,6 +148,9 @@ def generate_writing_with_social_simulation_client(
         "model_config": redact_model_config(section_config),
         "inputs": {
             "memory_packet_path": str(config.memory_packet_path),
+            "creative_context_packet_path": str(config.creative_context_packet_path)
+            if config.creative_context_packet_path
+            else None,
             "attribute_cards_path": str(config.attribute_cards_path),
             "social_simulation_path": str(config.social_simulation_path),
             "previous_scene_context_path": str(config.previous_scene_context_path)
@@ -158,6 +168,7 @@ def generate_writing_with_social_simulation_client(
         },
         "length_requirement": config.length_requirement,
         "output_requirements": config.output_requirements,
+        "creative_context_packet_chars": len(creative_context_packet),
         "output": quick_eval,
         "usage": result.usage,
         "artifacts": {
@@ -182,7 +193,7 @@ def format_previous_scene_context(
     if scene is None:
         return ""
 
-    limit = max(int(max_chars or 0), 80)
+    full_text_budget = max(int(max_chars or 0), 80)
     scene_id = str(getattr(scene, "scene_id", "") or "").strip()
     title = str(getattr(scene, "title", "") or "").strip()
     subtitle = str(getattr(scene, "subtitle", "") or "").strip()
@@ -198,17 +209,15 @@ def format_previous_scene_context(
 
     if content:
         full_context = "\n".join([*lines, "Full text:", content]).strip()
-        if len(re.sub(r"\s+", "", full_context)) <= limit:
+        if len(re.sub(r"\s+", "", full_context)) <= full_text_budget:
             return full_context
 
     entity_names = _unique_nonempty([*entities, *_extract_scene_entity_names(content)])
-    summary_text = str(summary or "").strip() or _fallback_scene_summary(content, max_chars=max(limit - 120, 80))
-    summary_budget = max(limit - sum(len(name) for name in entity_names[:12]) - 120, 80)
-    summary_text = _truncate_non_ws(summary_text, summary_budget)
+    summary_text = str(summary or "").strip()
     lines.append("Summary:")
     lines.append(summary_text or "No compact summary available.")
     lines.append("Entities:")
-    lines.append("、".join(entity_names[:12]) if entity_names else "No entities extracted.")
+    lines.append("、".join(entity_names) if entity_names else "No entities extracted.")
     return "\n".join(lines).strip()
 
 
@@ -249,6 +258,26 @@ def _read_style_reference(config: SocialWritingGenerationConfig) -> str:
                 return scene.content.strip()
         raise ValueError(f"Scene not found in {config.style_reference_script}: {config.style_reference_scene_id}")
     return ""
+
+
+def _read_creative_context_packet(path: Path | None) -> str:
+    if path is None:
+        return ""
+    return Path(path).read_text(encoding="utf-8").strip()
+
+
+def _combine_memory_and_creative_context(*, memory_packet: str, creative_context_packet: str) -> str:
+    memory_packet = str(memory_packet or "").rstrip()
+    creative_context_packet = str(creative_context_packet or "").strip()
+    if not creative_context_packet:
+        return memory_packet
+    return (
+        f"{memory_packet}\n\n"
+        "# Creative Context Packet\n\n"
+        "The following source-aware context may include conversational guidance, external references, "
+        "and promoted narrative memory. External references are not canonical unless explicitly marked.\n\n"
+        f"{creative_context_packet.rstrip()}\n"
+    )
 
 
 def _quick_eval(
@@ -319,23 +348,6 @@ def _extract_scene_entity_names(text: str) -> list[str]:
     names.extend(match.strip() for match in re.findall(r"\b[A-Z][A-Z0-9-]{1,20}\b", text))
     names.extend(match.strip() for match in re.findall(r"歼[\u4e00-\u9fff0-9A-Za-z-]{1,12}", text))
     return _unique_nonempty(names)
-
-
-def _fallback_scene_summary(text: str, *, max_chars: int) -> str:
-    compact = re.sub(r"\s+", " ", text).strip()
-    if not compact:
-        return ""
-    if len(compact) <= max_chars:
-        return compact
-    half = max((max_chars - 5) // 2, 20)
-    return f"{compact[:half]} ... {compact[-half:]}"
-
-
-def _truncate_non_ws(text: str, max_chars: int) -> str:
-    compact = re.sub(r"\s+", " ", text).strip()
-    if len(compact) <= max_chars:
-        return compact
-    return compact[: max(max_chars - 1, 1)].rstrip() + "…"
 
 
 def _unique_nonempty(values: list[str] | tuple[str, ...]) -> list[str]:

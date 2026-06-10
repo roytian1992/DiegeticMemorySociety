@@ -9,16 +9,19 @@ from typing import Any
 from dms.llm import LLMClient, LLMResult
 from dms.parsing import extract_json_value
 from dms.prompts import YAMLPromptLoader
+from dms.simulation.creative_context import load_creative_context_packet, select_creative_context_notes
 
 
 @dataclass(frozen=True)
 class AttributeCardConfig:
     memory_packet_path: Path
     output_dir: Path
+    creative_context_packet_path: Path | None = None
     prompt_dir: Path = Path("task_specs/prompts")
     entity_types: tuple[str, ...] = ("character",)
     entity_names: tuple[str, ...] = ()
     max_memories_per_entity: int = 16
+    max_creative_context_notes_per_entity: int = 8
     overwrite: bool = False
 
 
@@ -31,12 +34,19 @@ def build_entity_attribute_cards(config: AttributeCardConfig, llm_client: LLMCli
         (output_dir / subdir).mkdir(parents=True, exist_ok=True)
 
     packet = json.loads(Path(config.memory_packet_path).read_text(encoding="utf-8"))
+    creative_context_packet = load_creative_context_packet(config.creative_context_packet_path)
     loader = YAMLPromptLoader(config.prompt_dir)
     cards: list[dict[str, Any]] = []
     calls: list[dict[str, Any]] = []
 
     for entity in _select_entities(packet, entity_types=config.entity_types, entity_names=config.entity_names):
-        context = _build_entity_context(packet, entity, max_memories=config.max_memories_per_entity)
+        context = _build_entity_context(
+            packet,
+            entity,
+            max_memories=config.max_memories_per_entity,
+            creative_context_packet=creative_context_packet,
+            max_creative_context_notes=config.max_creative_context_notes_per_entity,
+        )
         call_id = _safe_call_id(entity)
         (output_dir / "inputs" / f"{call_id}.json").write_text(
             json.dumps(context, ensure_ascii=False, indent=2) + "\n",
@@ -87,9 +97,13 @@ def build_entity_attribute_cards(config: AttributeCardConfig, llm_client: LLMCli
         },
         "inputs": {
             "memory_packet_path": str(config.memory_packet_path),
+            "creative_context_packet_path": str(config.creative_context_packet_path)
+            if config.creative_context_packet_path
+            else None,
             "entity_types": list(config.entity_types),
             "entity_names": list(config.entity_names),
             "max_memories_per_entity": config.max_memories_per_entity,
+            "max_creative_context_notes_per_entity": config.max_creative_context_notes_per_entity,
         },
         "card_count": len(cards),
         "cards": cards,
@@ -170,7 +184,14 @@ def _select_entities(
     return entities
 
 
-def _build_entity_context(packet: dict[str, Any], entity: dict[str, Any], *, max_memories: int) -> dict[str, Any]:
+def _build_entity_context(
+    packet: dict[str, Any],
+    entity: dict[str, Any],
+    *,
+    max_memories: int,
+    creative_context_packet: dict[str, Any] | None = None,
+    max_creative_context_notes: int = 8,
+) -> dict[str, Any]:
     memory_indexes = set(str(item) for item in (entity.get("related_memory_index") or []))
     memories = [
         memory
@@ -196,6 +217,11 @@ def _build_entity_context(packet: dict[str, Any], entity: dict[str, Any], *, max
     has_author_profile = bool(entity.get("author_profile") or entity.get("initial_state") or entity.get("profile_policy"))
     if has_author_profile:
         available_reference_ids.append("AUTHOR_PROFILE")
+    creative_context_notes = select_creative_context_notes(
+        creative_context_packet or {},
+        entity,
+        limit=max(max_creative_context_notes, 0),
+    )
     return {
         "prefix_boundary": packet.get("retrieval_boundary") or {},
         "prefix_boundary_label": _prefix_boundary_label(packet.get("retrieval_boundary") or {}),
@@ -204,12 +230,14 @@ def _build_entity_context(packet: dict[str, Any], entity: dict[str, Any], *, max
         "relations": relations,
         "related_memories": memories,
         "character_reference_knowledge": character_reference_knowledge,
+        "creative_context_notes": creative_context_notes,
         "references": refs,
         "instructions": {
             "status_labels": ["explicit", "inferred"],
             "available_memory_indexes": [memory.get("index") for memory in memories],
             "available_reference_ids": available_reference_ids,
             "author_profile_ref": "AUTHOR_PROFILE" if has_author_profile else "",
+            "creative_context_notes_policy": "Source-aware guidance from conversation/artifact/external/simulation context; external_reference notes are not canon unless marked canonical.",
         },
     }
 

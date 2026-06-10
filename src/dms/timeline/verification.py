@@ -319,8 +319,6 @@ def format_temporal_audit_report(audit: dict[str, Any], *, max_issues: int = 80)
         lines.append("- No temporal evidence audit issues.")
     for item in issues[:max_issues]:
         evidence = str(item.get("evidence") or "").replace("\n", " ").strip()
-        if len(evidence) > 120:
-            evidence = evidence[:117] + "..."
         evidence_suffix = f" | evidence: {evidence}" if evidence else ""
         lines.append(
             "- "
@@ -337,8 +335,6 @@ def format_temporal_audit_report(audit: dict[str, Any], *, max_issues: int = 80)
                     continue
                 text = str(suggestion.get("evidence_aligned_text") or suggestion.get("evidence_text") or "")
                 text = text.replace("\n", " ").strip()
-                if len(text) > 70:
-                    text = text[:67] + "..."
                 preview.append(
                     f"{suggestion.get('evidence_source_field')}:{suggestion.get('evidence_start')}-{suggestion.get('evidence_end')} `{text}`"
                 )

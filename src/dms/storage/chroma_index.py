@@ -333,7 +333,7 @@ class OpenAICompatibleEmbeddingFunction:
         }
 
     def __call__(self, input: list[str]) -> list[list[float]]:  # noqa: A002 - Chroma API name.
-        texts = [_truncate_for_embedding(str(text or ""), self.max_tokens) for text in input]
+        texts = [str(text or "") for text in input]
         embeddings: list[list[float]] = []
         for index in range(0, len(texts), self.batch_size):
             batch = texts[index : index + self.batch_size]
@@ -382,7 +382,7 @@ class OpenAICompatibleEmbeddingFunction:
                 body = response.read().decode("utf-8")
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Embedding request failed: HTTP {exc.code}: {body[:500]}") from exc
+            raise RuntimeError(f"Embedding request failed: HTTP {exc.code}: {body}") from exc
         except urllib.error.URLError as exc:
             raise RuntimeError(f"Embedding request failed: {exc}") from exc
         parsed = json.loads(body)
@@ -398,15 +398,6 @@ def _tokens(text: str) -> list[str]:
     cjk_bigrams = [lowered[index : index + 2] for index in range(max(len(lowered) - 1, 0))]
     cjk_bigrams = [token for token in cjk_bigrams if any("\u4e00" <= char <= "\u9fff" for char in token)]
     return tokens + cjk_chars + cjk_bigrams
-
-
-def _truncate_for_embedding(text: str, max_tokens: int) -> str:
-    if max_tokens <= 0:
-        return text
-    # Conservative approximation for OpenAI-compatible local services. Existing
-    # DMS retrieval docs are short, so this normally returns the original text.
-    max_chars = max_tokens * 4
-    return text[:max_chars]
 
 
 def _chroma_metadata(record: dict[str, Any]) -> dict[str, Any]:

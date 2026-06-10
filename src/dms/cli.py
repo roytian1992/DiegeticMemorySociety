@@ -13,6 +13,28 @@ from dms.benchmark import (
     run_writing_benchmark,
 )
 from dms.config import build_openai_client_from_config, embedding_kwargs_from_config, load_local_config
+from dms.context_kernel import (
+    ContextAssembler,
+    ContextChromaIndexConfig,
+    CreativeContextPacketConfig,
+    CreativeMemoryKernel,
+    CreativeScope,
+    ExternalKnowledgeKernel,
+    FastAPIReranker,
+    FastAPIRerankerConfig,
+    LLMClientProvider,
+    ScoreReranker,
+    audit_external_vs_artifact_conflicts,
+    build_context_chroma_index,
+    export_external_entity_links,
+    export_external_timeline_claims,
+    format_creative_context_packet_markdown,
+    import_artifact_store_items,
+    import_reference_library_items,
+    search_context_chroma_index,
+    write_creative_context_json_schemas,
+)
+from dms.context_kernel.conversation import ConversationalMemoryIngestConfig, ingest_conversational_memory
 from dms.evaluation import WritingEvaluationConfig, build_scene_eligibility_splits, evaluate_writing
 from dms.intent_levels import CLI_INTENT_LEVEL_CHOICES
 from dms.writing import SocialWritingGenerationConfig, generate_writing_with_social_simulation
@@ -20,9 +42,11 @@ from dms.llm import (
     AnthropicMessagesClient,
     FakeDurableRelationshipClient,
     FakeEpisodicMemoryClient,
+    FakeExternalQAClient,
     FakeKGEntityMentionClient,
     FakeKGEntityRefinementClient,
-    FakeReferenceItemClient,
+    FakeReferenceFactPropertyClient,
+    FakeReferenceKGClient,
     FakeSceneEventClient,
     FakeSceneInventoryClient,
     FakeSceneSummaryClient,
@@ -50,13 +74,18 @@ from dms.memory import (
 from dms.narrative_units import DEFAULT_UNIT_LABEL, DEFAULT_UNIT_TYPE
 from dms.reference_library import (
     ChromaReferenceIndexConfig,
-    ReferenceItemExtractionConfig,
-    ReferenceItemImportConfig,
+    ReferenceFactPropertyExtractionConfig,
+    ReferenceKGExtractionConfig,
+    ReferenceKnowledgeImportConfig,
+    ReferenceKnowledgeQuery,
     ReferenceLibraryIngestConfig,
     build_chroma_reference_index,
-    extract_reference_items,
+    extract_reference_facts_properties,
+    extract_reference_kg,
+    get_reference_asset_counts,
     ingest_reference_library,
-    import_reference_items,
+    import_reference_knowledge,
+    query_reference_knowledge,
 )
 from dms.retrieval import MemoryPacketConfig, build_memory_packet, format_memory_packet_markdown
 from dms.prompts import YAMLPromptLoader
@@ -160,12 +189,71 @@ def _add_reference_context_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--include-reference-context", action="store_true")
     parser.add_argument("--reference-db", "--reference-db-path", dest="reference_db_path", type=Path, default=None)
     parser.add_argument("--reference-chroma-dir", type=Path, default=None)
-    parser.add_argument("--reference-collection-name", default="dms_reference_documents")
+    parser.add_argument("--reference-collection-name", default="dms_reference_knowledge")
     parser.add_argument("--reference-top-k", type=int, default=6)
     parser.add_argument("--reference-author-top-k", type=int, default=6)
     parser.add_argument("--reference-character-top-k", type=int, default=6)
     parser.add_argument("--reference-style-top-k", type=int, default=4)
     parser.add_argument("--reference-timeline-top-k", type=int, default=4)
+    parser.add_argument("--include-reference-fact-properties", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--reference-fact-binding-top-k", type=int, default=4)
+    parser.add_argument("--reference-property-binding-top-k", type=int, default=3)
+
+
+def _add_context_scope_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--project-id", required=True)
+    parser.add_argument("--artifact-id", default=None)
+    parser.add_argument("--artifact-version", default=None)
+    parser.add_argument("--conversation-id", default=None)
+    parser.add_argument("--unit-id", default=None)
+    parser.add_argument("--unit-type", default=None)
+    parser.add_argument("--before-unit-id", default=None)
+    parser.add_argument("--before-unit-order", type=int, default=None)
+    parser.add_argument("--character-id", default=None)
+    parser.add_argument("--entity-id", action="append", dest="entity_ids", default=None)
+    parser.add_argument("--task-mode", default=None)
+
+
+def _context_scope_from_args(args: argparse.Namespace) -> CreativeScope:
+    return CreativeScope(
+        project_id=args.project_id,
+        artifact_id=getattr(args, "artifact_id", None),
+        artifact_version=getattr(args, "artifact_version", None),
+        conversation_id=getattr(args, "conversation_id", None),
+        unit_id=getattr(args, "unit_id", None),
+        unit_type=getattr(args, "unit_type", None),
+        before_unit_id=getattr(args, "before_unit_id", None),
+        before_unit_order=getattr(args, "before_unit_order", None),
+        character_id=getattr(args, "character_id", None),
+        entity_ids=tuple(getattr(args, "entity_ids", None) or ()),
+        task_mode=getattr(args, "task_mode", None),
+    )
+
+
+def _read_context_text(args: argparse.Namespace, *, value_name: str, path_name: str, label: str) -> str:
+    value = getattr(args, value_name, None)
+    if value is not None:
+        return str(value)
+    path = getattr(args, path_name, None)
+    if path is not None:
+        return Path(path).read_text(encoding="utf-8").strip()
+    raise ValueError(f"--{label} or --{label}-file is required")
+
+
+def _add_context_index_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--context-db", type=Path, required=True)
+    parser.add_argument("--persist-dir", type=Path, required=True)
+    parser.add_argument("--project-id", required=True)
+    parser.add_argument("--collection-name", default="dms_context_documents")
+    parser.add_argument("--model-config", type=Path, default=None)
+    parser.add_argument("--embedding-section", default="embedding")
+    parser.add_argument("--embedding-dim", type=int, default=384)
+    parser.add_argument("--embedding-provider", choices=["hash", "openai"], default="hash")
+    parser.add_argument("--embedding-model", default=None)
+    parser.add_argument("--embedding-base-url", default=None)
+    parser.add_argument("--embedding-api-key", default=None)
+    parser.add_argument("--embedding-max-tokens", type=int, default=8192)
+    parser.add_argument("--embedding-timeout", type=int, default=60)
 
 
 def _build_llm_client(args: argparse.Namespace, *, fake_task: str = "scene_inventory"):
@@ -194,8 +282,12 @@ def _build_llm_client(args: argparse.Namespace, *, fake_task: str = "scene_inven
             return FakeEpisodicMemoryClient()
         if fake_task == "durable_relationships":
             return FakeDurableRelationshipClient()
-        if fake_task == "reference_items":
-            return FakeReferenceItemClient()
+        if fake_task == "reference_kg":
+            return FakeReferenceKGClient()
+        if fake_task == "reference_facts_properties":
+            return FakeReferenceFactPropertyClient()
+        if fake_task == "external_qa":
+            return FakeExternalQAClient()
         return FakeSceneInventoryClient()
     if args.provider == "anthropic":
         return AnthropicMessagesClient(
@@ -215,8 +307,27 @@ def _build_llm_client(args: argparse.Namespace, *, fake_task: str = "scene_inven
             temperature=args.temperature,
             timeout_seconds=args.timeout_seconds,
             enable_thinking=False,
+            thinking=_thinking_payload_from_cli(getattr(args, "thinking", None)),
+            include_chat_template_kwargs=bool(getattr(args, "include_chat_template_kwargs", True)),
         )
     raise ValueError(f"Unsupported provider: {args.provider}")
+
+
+def _build_context_reranker(args: argparse.Namespace):
+    mode = getattr(args, "reranker", None)
+    if not mode or mode == "none":
+        return None
+    if mode == "score":
+        return ScoreReranker()
+    if mode == "fastapi":
+        return FastAPIReranker(
+            FastAPIRerankerConfig(
+                base_url=args.reranker_base_url,
+                model=args.reranker_model,
+                timeout=args.reranker_timeout,
+            )
+        )
+    raise ValueError(f"Unsupported reranker: {mode}")
 
 
 def _explicit_model_overrides(args: argparse.Namespace) -> dict[str, object]:
@@ -228,7 +339,20 @@ def _explicit_model_overrides(args: argparse.Namespace) -> dict[str, object]:
         overrides["temperature"] = args.temperature
     if "--timeout-seconds" in raw_args:
         overrides["timeout_seconds"] = args.timeout_seconds
+    if "--thinking" in raw_args:
+        overrides["thinking"] = getattr(args, "thinking", None)
+    if "--include-chat-template-kwargs" in raw_args or "--no-include-chat-template-kwargs" in raw_args:
+        overrides["include_chat_template_kwargs"] = getattr(args, "include_chat_template_kwargs", True)
     return overrides
+
+
+def _thinking_payload_from_cli(value: str | None) -> dict[str, object] | None:
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    return {"type": value}
 
 
 def _embedding_kwargs(args: argparse.Namespace) -> dict:
@@ -567,41 +691,92 @@ def main(argv: list[str] | None = None) -> int:
     reference_ingest.add_argument("input_path", type=Path)
     reference_ingest.add_argument("--output-dir", type=Path, required=True)
     reference_ingest.add_argument("--max-chunk-chars", type=int, default=2400)
+    reference_ingest.add_argument("--workers", type=int, default=4)
     reference_ingest.add_argument("--overwrite", action="store_true")
 
-    reference_extract = subparsers.add_parser(
-        "extract-reference-items",
-        help="Extract flat reference_items.jsonl from ingested external reference chunks.",
+    reference_kg = subparsers.add_parser(
+        "extract-reference-kg",
+        help="Extract LightRAG-style entities and relationships from ingested external reference chunks.",
     )
-    reference_extract.add_argument("library_dir", type=Path)
-    reference_extract.add_argument("--output-dir", type=Path, required=True)
-    reference_extract.add_argument("--prompt-dir", type=Path, default=Path("task_specs/prompts"))
-    reference_extract.add_argument(
-        "--task-settings",
-        type=Path,
-        default=Path("task_specs/task_settings/reference_items_task.json"),
+    reference_kg.add_argument("library_dir", type=Path)
+    reference_kg.add_argument("--output-dir", type=Path, required=True)
+    reference_kg.add_argument("--start", type=int, default=1)
+    reference_kg.add_argument("--limit", type=int, default=None)
+    reference_kg.add_argument("--dry-run", action=argparse.BooleanOptionalAction, default=True)
+    reference_kg.add_argument("--overwrite", action="store_true")
+    reference_kg.add_argument("--max-retries", type=int, default=1)
+    reference_kg.add_argument("--workers", type=int, default=4)
+    reference_kg.add_argument("--entity-type", dest="entity_types", action="append", default=None)
+    reference_kg.add_argument("--model-config", type=Path, default=None)
+    reference_kg.add_argument("--model-section", default="llm")
+    reference_kg.add_argument("--provider", choices=["fake", "anthropic", "openai"], default="fake")
+    reference_kg.add_argument("--model", default=None)
+    reference_kg.add_argument("--base-url", default=None)
+    reference_kg.add_argument("--auth-token", default=None)
+    reference_kg.add_argument("--max-tokens", type=int, default=4096)
+    reference_kg.add_argument("--temperature", type=float, default=0.0)
+    reference_kg.add_argument("--timeout-seconds", type=int, default=120)
+    reference_kg.add_argument(
+        "--thinking",
+        default=None,
+        help="OpenAI-compatible thinking mode payload type, e.g. disabled sends {'type': 'disabled'}.",
     )
-    reference_extract.add_argument("--start", type=int, default=1)
-    reference_extract.add_argument("--limit", type=int, default=None)
-    reference_extract.add_argument("--dry-run", action=argparse.BooleanOptionalAction, default=True)
-    reference_extract.add_argument("--overwrite", action="store_true")
-    reference_extract.add_argument("--model-config", type=Path, default=None)
-    reference_extract.add_argument("--model-section", default="llm")
-    reference_extract.add_argument("--provider", choices=["fake", "anthropic", "openai"], default="fake")
-    reference_extract.add_argument("--model", default=None)
-    reference_extract.add_argument("--base-url", default=None)
-    reference_extract.add_argument("--auth-token", default=None)
-    reference_extract.add_argument("--max-tokens", type=int, default=4096)
-    reference_extract.add_argument("--temperature", type=float, default=0.0)
-    reference_extract.add_argument("--timeout-seconds", type=int, default=120)
+    reference_kg.add_argument(
+        "--include-chat-template-kwargs",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Send chat_template_kwargs.enable_thinking=false for Qwen/vLLM-style servers.",
+    )
 
-    reference_items = subparsers.add_parser(
-        "import-reference-items",
-        help="Import flat external reference items JSONL into a standalone SQLite reference library.",
+    reference_facts = subparsers.add_parser(
+        "extract-reference-facts-properties",
+        help="Extract source-local atomic facts and entity properties from reference KG evidence.",
     )
-    reference_items.add_argument("items_path", type=Path)
-    reference_items.add_argument("--output-db", type=Path, required=True)
-    reference_items.add_argument("--overwrite", action="store_true")
+    reference_facts.add_argument("library_dir", type=Path)
+    reference_facts.add_argument("--kg-dir", type=Path, required=True)
+    reference_facts.add_argument("--output-dir", type=Path, required=True)
+    reference_facts.add_argument("--start", type=int, default=1)
+    reference_facts.add_argument("--limit", type=int, default=None)
+    reference_facts.add_argument("--dry-run", action=argparse.BooleanOptionalAction, default=True)
+    reference_facts.add_argument("--overwrite", action="store_true")
+    reference_facts.add_argument("--max-retries", type=int, default=1)
+    reference_facts.add_argument("--workers", type=int, default=4)
+    reference_facts.add_argument("--min-entity-degree", type=int, default=2)
+    reference_facts.add_argument("--max-evidence-chunks-per-job", type=int, default=12)
+    reference_facts.add_argument("--entity-disambiguation", action=argparse.BooleanOptionalAction, default=True)
+    reference_facts.add_argument("--disambiguation-lexical-threshold", type=float, default=0.88)
+    reference_facts.add_argument("--model-config", type=Path, default=None)
+    reference_facts.add_argument("--model-section", default="llm")
+    reference_facts.add_argument("--provider", choices=["fake", "anthropic", "openai"], default="fake")
+    reference_facts.add_argument("--model", default=None)
+    reference_facts.add_argument("--base-url", default=None)
+    reference_facts.add_argument("--auth-token", default=None)
+    reference_facts.add_argument("--max-tokens", type=int, default=4096)
+    reference_facts.add_argument("--temperature", type=float, default=0.0)
+    reference_facts.add_argument("--timeout-seconds", type=int, default=120)
+    reference_facts.add_argument(
+        "--thinking",
+        default=None,
+        help="OpenAI-compatible thinking mode payload type, e.g. disabled sends {'type': 'disabled'}.",
+    )
+    reference_facts.add_argument(
+        "--include-chat-template-kwargs",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Send chat_template_kwargs.enable_thinking=false for Qwen/vLLM-style servers.",
+    )
+
+    reference_knowledge = subparsers.add_parser(
+        "import-reference-knowledge",
+        help="Import LightRAG-style external reference knowledge assets into SQLite.",
+    )
+    reference_knowledge.add_argument("--library-dir", type=Path, required=True)
+    reference_knowledge.add_argument("--kg-dir", type=Path, required=True)
+    reference_knowledge.add_argument("--facts-dir", type=Path, default=None)
+    reference_knowledge.add_argument("--output-db", type=Path, required=True)
+    reference_knowledge.add_argument("--entity-disambiguation", action=argparse.BooleanOptionalAction, default=True)
+    reference_knowledge.add_argument("--disambiguation-lexical-threshold", type=float, default=0.88)
+    reference_knowledge.add_argument("--overwrite", action="store_true")
 
     reference_index = subparsers.add_parser(
         "build-reference-index",
@@ -609,7 +784,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     reference_index.add_argument("db_path", type=Path)
     reference_index.add_argument("--persist-dir", type=Path, required=True)
-    reference_index.add_argument("--collection-name", default="dms_reference_documents")
+    reference_index.add_argument("--collection-name", default="dms_reference_knowledge")
     reference_index.add_argument("--model-config", type=Path, default=None)
     reference_index.add_argument("--embedding-section", default="embedding")
     reference_index.add_argument("--embedding-dim", type=int, default=384)
@@ -621,6 +796,224 @@ def main(argv: list[str] | None = None) -> int:
     reference_index.add_argument("--embedding-timeout", type=int, default=60)
     reference_index.add_argument("--upsert-batch-size", type=int, default=1000)
     reference_index.add_argument("--overwrite", action="store_true")
+
+    reference_query = subparsers.add_parser(
+        "query-reference-knowledge",
+        help="Run LightRAG-style mix retrieval over external reference chunks, entities, and relationships.",
+    )
+    reference_query.add_argument("db_path", type=Path)
+    reference_query.add_argument("--query", required=True)
+    reference_query.add_argument("--source-doc-id", dest="source_doc_ids", action="append", default=None)
+    reference_query.add_argument("--source-path", dest="source_paths", action="append", default=None)
+    reference_query.add_argument("--chroma-dir", type=Path, default=None)
+    reference_query.add_argument("--collection-name", default="dms_reference_knowledge")
+    reference_query.add_argument("--top-k", type=int, default=8)
+    reference_query.add_argument("--chunk-top-k", type=int, default=8)
+    reference_query.add_argument("--entity-top-k", type=int, default=8)
+    reference_query.add_argument("--relationship-top-k", type=int, default=8)
+    reference_query.add_argument("--include-fact-properties", action=argparse.BooleanOptionalAction, default=True)
+    reference_query.add_argument("--fact-binding-top-k", type=int, default=4)
+    reference_query.add_argument("--property-binding-top-k", type=int, default=3)
+    reference_query.add_argument("--model-config", type=Path, default=None)
+    reference_query.add_argument("--embedding-section", default="embedding")
+    reference_query.add_argument("--embedding-dim", type=int, default=384)
+    reference_query.add_argument("--embedding-provider", choices=["hash", "openai"], default="hash")
+    reference_query.add_argument("--embedding-model", default=None)
+    reference_query.add_argument("--embedding-base-url", default=None)
+    reference_query.add_argument("--embedding-api-key", default=None)
+    reference_query.add_argument("--embedding-max-tokens", type=int, default=8192)
+    reference_query.add_argument("--embedding-timeout", type=int, default=60)
+
+    context_import_artifacts = subparsers.add_parser(
+        "context-import-artifacts",
+        help="Import existing artifact SQLite retrieval documents into the Creative Context Kernel sidecar.",
+    )
+    context_import_artifacts.add_argument("asset_db_path", type=Path)
+    context_import_artifacts.add_argument("--context-db", type=Path, required=True)
+    context_import_artifacts.add_argument("--project-id", required=True)
+    context_import_artifacts.add_argument("--source-id", default="artifact_store")
+    context_import_artifacts.add_argument("--title", default="Narrative Artifact Store")
+    context_import_artifacts.add_argument("--canonical", action="store_true")
+    context_import_artifacts.add_argument("--reset-context-store", action="store_true")
+
+    context_import_references = subparsers.add_parser(
+        "context-import-references",
+        help="Import standalone reference library SQLite items into the Creative Context Kernel sidecar.",
+    )
+    context_import_references.add_argument("reference_db_path", type=Path)
+    context_import_references.add_argument("--context-db", type=Path, required=True)
+    context_import_references.add_argument("--project-id", required=True)
+    context_import_references.add_argument("--source-id", default="external_reference_library")
+    context_import_references.add_argument("--title", default="External Reference Library")
+    context_import_references.add_argument("--reset-context-store", action="store_true")
+
+    context_ingest_conversation = subparsers.add_parser(
+        "context-ingest-conversation",
+        help="Extract and import Conversational Memory v0 into the Creative Context Kernel sidecar.",
+    )
+    context_ingest_conversation.add_argument("transcript_path", type=Path)
+    context_ingest_conversation.add_argument("--context-db", type=Path, required=True)
+    context_ingest_conversation.add_argument("--project-id", required=True)
+    context_ingest_conversation.add_argument("--conversation-id", default="conversation")
+    context_ingest_conversation.add_argument("--source-id", default=None)
+    context_ingest_conversation.add_argument("--title", default="Creative Conversation")
+    context_ingest_conversation.add_argument("--reset-context-store", action="store_true")
+    context_ingest_conversation.add_argument("--use-llm", action="store_true")
+    context_ingest_conversation.add_argument("--model-config", type=Path, default=None)
+    context_ingest_conversation.add_argument("--model-section", default="llm")
+    context_ingest_conversation.add_argument("--provider", choices=["fake", "anthropic", "openai"], default="fake")
+    context_ingest_conversation.add_argument("--model", default=None)
+    context_ingest_conversation.add_argument("--base-url", default=None)
+    context_ingest_conversation.add_argument("--auth-token", default=None)
+    context_ingest_conversation.add_argument("--max-tokens", type=int, default=2048)
+    context_ingest_conversation.add_argument("--temperature", type=float, default=0.0)
+    context_ingest_conversation.add_argument("--timeout-seconds", type=int, default=120)
+
+    context_search = subparsers.add_parser(
+        "context-search",
+        help="Search source-aware Creative Context Kernel items.",
+    )
+    context_search.add_argument("--context-db", type=Path, required=True)
+    context_search.add_argument("--query", required=True)
+    _add_context_scope_args(context_search)
+    context_search.add_argument("--source-type", action="append", dest="source_types", default=None)
+    context_search.add_argument("--item-type", action="append", dest="item_types", default=None)
+    context_search.add_argument("--status", action="append", dest="statuses", default=None)
+    context_search.add_argument("--visibility", action="append", dest="visibility", default=None)
+    context_search.add_argument("--top-k", type=int, default=10)
+
+    context_packet = subparsers.add_parser(
+        "build-creative-context-packet",
+        help="Build source-aware creative_context_packet from conversation, artifact, and external reference context.",
+    )
+    context_packet.add_argument("--context-db", type=Path, required=True)
+    context_packet.add_argument("--request", default=None)
+    context_packet.add_argument("--request-file", type=Path, default=None)
+    _add_context_scope_args(context_packet)
+    context_packet.add_argument("--top-k", type=int, default=12)
+    context_packet.add_argument("--include-conversation-memory", action=argparse.BooleanOptionalAction, default=True)
+    context_packet.add_argument("--include-artifact-memory", action=argparse.BooleanOptionalAction, default=True)
+    context_packet.add_argument("--include-external-references", action=argparse.BooleanOptionalAction, default=True)
+    context_packet.add_argument("--include-simulation", action=argparse.BooleanOptionalAction, default=False)
+    context_packet.add_argument("--reranker", choices=["none", "score", "fastapi"], default="none")
+    context_packet.add_argument("--reranker-base-url", default="http://127.0.0.1:8090")
+    context_packet.add_argument("--reranker-model", default="bge-reranker-base")
+    context_packet.add_argument("--reranker-timeout", type=int, default=60)
+    context_packet.add_argument("--format", choices=["json", "markdown"], default="json")
+    context_packet.add_argument("--output", type=Path, default=None)
+
+    context_external_qa = subparsers.add_parser(
+        "context-external-qa",
+        help="Run source-grounded QA over external reference context items.",
+    )
+    context_external_qa.add_argument("--context-db", type=Path, required=True)
+    context_external_qa.add_argument("--question", default=None)
+    context_external_qa.add_argument("--question-file", type=Path, default=None)
+    _add_context_scope_args(context_external_qa)
+    context_external_qa.add_argument("--top-k", type=int, default=6)
+    context_external_qa.add_argument("--answer-with-llm", action="store_true")
+    context_external_qa.add_argument("--model-config", type=Path, default=None)
+    context_external_qa.add_argument("--model-section", default="llm")
+    context_external_qa.add_argument("--provider", choices=["fake", "anthropic", "openai"], default="fake")
+    context_external_qa.add_argument("--model", default=None)
+    context_external_qa.add_argument("--base-url", default=None)
+    context_external_qa.add_argument("--auth-token", default=None)
+    context_external_qa.add_argument("--max-tokens", type=int, default=2048)
+    context_external_qa.add_argument("--temperature", type=float, default=0.0)
+    context_external_qa.add_argument("--timeout-seconds", type=int, default=120)
+    context_external_qa.add_argument("--output", type=Path, default=None)
+
+    context_promote = subparsers.add_parser(
+        "context-promote-item",
+        help="Explicitly promote a conversation or external context item into canonical narrative/project memory.",
+    )
+    context_promote.add_argument("--context-db", type=Path, required=True)
+    context_promote.add_argument("--item-id", required=True)
+    context_promote.add_argument("--target-layer", required=True)
+    context_promote.add_argument("--authority", default="user_confirmed")
+    context_promote.add_argument("--actor", default="user")
+    context_promote.add_argument("--reason", default="")
+    context_promote.add_argument("--target-item-id", default=None)
+
+    context_status = subparsers.add_parser(
+        "context-set-status",
+        help="Set a context item status while recording history.",
+    )
+    context_status.add_argument("--context-db", type=Path, required=True)
+    context_status.add_argument("--item-id", required=True)
+    context_status.add_argument("--status", required=True)
+    context_status.add_argument("--actor", default="user")
+    context_status.add_argument("--reason", default="")
+
+    context_history = subparsers.add_parser(
+        "context-history",
+        help="Show Creative Context Kernel item history.",
+    )
+    context_history.add_argument("--context-db", type=Path, required=True)
+    context_history.add_argument("--item-id", required=True)
+
+    context_schema = subparsers.add_parser(
+        "export-context-json-schemas",
+        help="Write Creative Context Kernel JSON Schema files and enum docs.",
+    )
+    context_schema.add_argument("--output-dir", type=Path, required=True)
+
+    context_index = subparsers.add_parser(
+        "build-context-index",
+        help="Build a Chroma statement index over Creative Context Kernel retrieval documents.",
+    )
+    _add_context_index_args(context_index)
+    context_index.add_argument("--upsert-batch-size", type=int, default=1000)
+    context_index.add_argument("--overwrite", action="store_true")
+
+    context_index_search = subparsers.add_parser(
+        "search-context-index",
+        help="Search the Creative Context Kernel Chroma index with SQL-authoritative filters.",
+    )
+    _add_context_index_args(context_index_search)
+    context_index_search.add_argument("--query", required=True)
+    context_index_search.add_argument("--artifact-id", default=None)
+    context_index_search.add_argument("--artifact-version", default=None)
+    context_index_search.add_argument("--conversation-id", default=None)
+    context_index_search.add_argument("--unit-id", default=None)
+    context_index_search.add_argument("--unit-type", default=None)
+    context_index_search.add_argument("--before-unit-id", default=None)
+    context_index_search.add_argument("--before-unit-order", type=int, default=None)
+    context_index_search.add_argument("--character-id", default=None)
+    context_index_search.add_argument("--entity-id", action="append", dest="entity_ids", default=None)
+    context_index_search.add_argument("--task-mode", default=None)
+    context_index_search.add_argument("--source-type", action="append", dest="source_types", default=None)
+    context_index_search.add_argument("--item-type", action="append", dest="item_types", default=None)
+    context_index_search.add_argument("--status", action="append", dest="statuses", default=None)
+    context_index_search.add_argument("--visibility", action="append", dest="visibility", default=None)
+    context_index_search.add_argument("--top-k", type=int, default=10)
+
+    context_audit_conflicts = subparsers.add_parser(
+        "context-audit-conflicts",
+        help="Audit external reference records against narrative artifact memory for contradiction candidates.",
+    )
+    context_audit_conflicts.add_argument("--context-db", type=Path, required=True)
+    _add_context_scope_args(context_audit_conflicts)
+    context_audit_conflicts.add_argument("--top-k", type=int, default=100)
+    context_audit_conflicts.add_argument("--output", type=Path, default=None)
+
+    context_export_entity_links = subparsers.add_parser(
+        "context-export-external-entity-links",
+        help="Export external-reference-to-entity link candidates for review.",
+    )
+    context_export_entity_links.add_argument("--context-db", type=Path, required=True)
+    _add_context_scope_args(context_export_entity_links)
+    context_export_entity_links.add_argument("--top-k", type=int, default=1000)
+    context_export_entity_links.add_argument("--output", type=Path, default=None)
+
+    context_export_timeline = subparsers.add_parser(
+        "context-export-external-timeline-claims",
+        help="Export external reference timeline claim candidates for review.",
+    )
+    context_export_timeline.add_argument("--context-db", type=Path, required=True)
+    _add_context_scope_args(context_export_timeline)
+    context_export_timeline.add_argument("--top-k", type=int, default=1000)
+    context_export_timeline.add_argument("--output", type=Path, default=None)
 
     query_entity_memories = subparsers.add_parser(
         "query-entity-memories",
@@ -736,11 +1129,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Build evidence-bound entity attribute cards from a memory packet.",
     )
     attribute_cards.add_argument("memory_packet_path", type=Path)
+    attribute_cards.add_argument("--creative-context-packet", type=Path, default=None)
     attribute_cards.add_argument("--output-dir", type=Path, required=True)
     attribute_cards.add_argument("--prompt-dir", type=Path, default=Path("task_specs/prompts"))
     attribute_cards.add_argument("--entity-type", action="append", dest="entity_types", default=None)
     attribute_cards.add_argument("--entity", action="append", dest="entity_names", default=None)
     attribute_cards.add_argument("--max-memories-per-entity", type=int, default=16)
+    attribute_cards.add_argument("--max-creative-context-notes-per-entity", type=int, default=8)
     attribute_cards.add_argument("--overwrite", action="store_true")
     attribute_cards.add_argument("--model-config", type=Path, default=None)
     attribute_cards.add_argument("--model-section", default="llm")
@@ -759,11 +1154,13 @@ def main(argv: list[str] | None = None) -> int:
     disposition_notes.add_argument("attribute_cards_path", type=Path)
     disposition_notes.add_argument("--social-simulation-intent", required=True)
     disposition_notes.add_argument("--memory-packet", type=Path, default=None)
+    disposition_notes.add_argument("--creative-context-packet", type=Path, default=None)
     disposition_notes.add_argument("--output-dir", type=Path, required=True)
     disposition_notes.add_argument("--prompt-dir", type=Path, default=Path("task_specs/prompts"))
     disposition_notes.add_argument("--entity-type", action="append", dest="entity_types", default=None)
     disposition_notes.add_argument("--entity", action="append", dest="entity_names", default=None)
     disposition_notes.add_argument("--max-relevant-memories-per-entity", type=int, default=6)
+    disposition_notes.add_argument("--max-creative-context-notes-per-entity", type=int, default=8)
     disposition_notes.add_argument("--overwrite", action="store_true")
     disposition_notes.add_argument("--model-config", type=Path, default=None)
     disposition_notes.add_argument("--model-section", default="llm")
@@ -785,8 +1182,10 @@ def main(argv: list[str] | None = None) -> int:
     social_simulation.add_argument("--writing-intent", default=None)
     social_simulation.add_argument("--writing-intent-file", type=Path, default=None)
     social_simulation.add_argument("--scene-disposition-notes", type=Path, default=None)
+    social_simulation.add_argument("--creative-context-packet", type=Path, default=None)
     social_simulation.add_argument("--output-dir", type=Path, required=True)
     social_simulation.add_argument("--prompt-dir", type=Path, default=Path("task_specs/prompts"))
+    social_simulation.add_argument("--max-creative-context-notes-per-entity", type=int, default=8)
     social_simulation.add_argument("--overwrite", action="store_true")
     social_simulation.add_argument("--model-config", type=Path, default=None)
     social_simulation.add_argument("--model-section", default="llm")
@@ -804,6 +1203,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     social_writing.add_argument("--writing-request", required=True)
     social_writing.add_argument("--memory-packet-file", type=Path, required=True)
+    social_writing.add_argument("--creative-context-packet-file", type=Path, default=None)
     social_writing.add_argument("--attribute-cards-file", type=Path, required=True)
     social_writing.add_argument("--social-simulation-file", type=Path, required=True)
     social_writing.add_argument("--output-dir", type=Path, required=True)
@@ -1303,38 +1703,76 @@ def main(argv: list[str] | None = None) -> int:
                 input_path=args.input_path,
                 output_dir=args.output_dir,
                 max_chunk_chars=args.max_chunk_chars,
+                workers=args.workers,
                 overwrite=args.overwrite,
             )
         )
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
 
-    if args.command == "extract-reference-items":
-        llm_client = None if args.dry_run else _build_llm_client(args, fake_task="reference_items")
-        summary = extract_reference_items(
-            ReferenceItemExtractionConfig(
+    if args.command == "extract-reference-kg":
+        llm_client = None if args.dry_run else _build_llm_client(args, fake_task="reference_kg")
+        summary = extract_reference_kg(
+            ReferenceKGExtractionConfig(
                 library_dir=args.library_dir,
                 output_dir=args.output_dir,
-                prompt_dir=args.prompt_dir,
-                task_settings_path=args.task_settings,
                 start=args.start,
                 limit=args.limit,
                 dry_run=args.dry_run,
                 overwrite=args.overwrite,
+                max_retries=args.max_retries,
+                workers=args.workers,
+                entity_types=tuple(args.entity_types or (
+                    "character",
+                    "group",
+                    "organization",
+                    "location",
+                    "object",
+                    "concept",
+                    "occasion",
+                )),
             ),
             llm_client=llm_client,
         )
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
 
-    if args.command == "import-reference-items":
-        summary = import_reference_items(
-            ReferenceItemImportConfig(
-                items_path=args.items_path,
+    if args.command == "extract-reference-facts-properties":
+        llm_client = None if args.dry_run else _build_llm_client(args, fake_task="reference_facts_properties")
+        summary = extract_reference_facts_properties(
+            ReferenceFactPropertyExtractionConfig(
+                library_dir=args.library_dir,
+                kg_dir=args.kg_dir,
+                output_dir=args.output_dir,
+                start=args.start,
+                limit=args.limit,
+                dry_run=args.dry_run,
+                overwrite=args.overwrite,
+                max_retries=args.max_retries,
+                workers=args.workers,
+                min_entity_degree=args.min_entity_degree,
+                max_evidence_chunks_per_job=args.max_evidence_chunks_per_job,
+                entity_disambiguation=args.entity_disambiguation,
+                disambiguation_lexical_threshold=args.disambiguation_lexical_threshold,
+            ),
+            llm_client=llm_client,
+        )
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "import-reference-knowledge":
+        summary = import_reference_knowledge(
+            ReferenceKnowledgeImportConfig(
+                library_dir=args.library_dir,
+                kg_dir=args.kg_dir,
+                facts_dir=args.facts_dir,
                 db_path=args.output_db,
                 reset=args.overwrite,
+                entity_disambiguation=args.entity_disambiguation,
+                disambiguation_lexical_threshold=args.disambiguation_lexical_threshold,
             )
         )
+        summary["asset_counts"] = get_reference_asset_counts(args.output_db)
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
 
@@ -1351,6 +1789,229 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "query-reference-knowledge":
+        embedding_kwargs = _embedding_kwargs(args)
+        result = query_reference_knowledge(
+            ReferenceKnowledgeQuery(
+                db_path=args.db_path,
+                query=args.query,
+                source_doc_ids=tuple(args.source_doc_ids or ()),
+                source_paths=tuple(args.source_paths or ()),
+                chroma_dir=args.chroma_dir,
+                collection_name=args.collection_name,
+                top_k=args.top_k,
+                chunk_top_k=args.chunk_top_k,
+                entity_top_k=args.entity_top_k,
+                relationship_top_k=args.relationship_top_k,
+                include_fact_properties=args.include_fact_properties,
+                fact_binding_top_k=args.fact_binding_top_k,
+                property_binding_top_k=args.property_binding_top_k,
+                **embedding_kwargs,
+            )
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "context-import-artifacts":
+        kernel = CreativeMemoryKernel.from_db(args.context_db, reset=args.reset_context_store)
+        summary = import_artifact_store_items(
+            kernel,
+            asset_db_path=args.asset_db_path,
+            project_id=args.project_id,
+            source_id=args.source_id,
+            title=args.title,
+            canonical=args.canonical,
+        )
+        summary["context_db_path"] = str(args.context_db)
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "context-import-references":
+        kernel = CreativeMemoryKernel.from_db(args.context_db, reset=args.reset_context_store)
+        summary = import_reference_library_items(
+            kernel,
+            reference_db_path=args.reference_db_path,
+            project_id=args.project_id,
+            source_id=args.source_id,
+            title=args.title,
+        )
+        summary["context_db_path"] = str(args.context_db)
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "context-ingest-conversation":
+        llm_client = _build_llm_client(args) if args.use_llm else None
+        summary = ingest_conversational_memory(
+            ConversationalMemoryIngestConfig(
+                transcript_path=args.transcript_path,
+                project_id=args.project_id,
+                context_db_path=args.context_db,
+                conversation_id=args.conversation_id,
+                source_id=args.source_id,
+                title=args.title,
+                reset_store=args.reset_context_store,
+                use_llm=args.use_llm,
+            ),
+            llm_client=llm_client,
+        )
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "context-search":
+        kernel = CreativeMemoryKernel.from_db(args.context_db)
+        result = kernel.search(
+            args.query,
+            scope=_context_scope_from_args(args),
+            source_types=args.source_types,
+            item_types=args.item_types,
+            statuses=args.statuses,
+            entity_ids=args.entity_ids,
+            visibility=args.visibility,
+            top_k=args.top_k,
+        )
+        print(json.dumps({"query": args.query, "count": len(result), "results": result}, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "build-creative-context-packet":
+        kernel = CreativeMemoryKernel.from_db(args.context_db)
+        packet_result = ContextAssembler(kernel, reranker=_build_context_reranker(args)).build_packet(
+            CreativeContextPacketConfig(
+                request=_read_context_text(args, value_name="request", path_name="request_file", label="request"),
+                scope=_context_scope_from_args(args),
+                task_mode=args.task_mode or "write",
+                top_k=args.top_k,
+                include_conversation_memory=args.include_conversation_memory,
+                include_artifact_memory=args.include_artifact_memory,
+                include_external_references=args.include_external_references,
+                include_simulation=args.include_simulation,
+                entity_ids=tuple(args.entity_ids or ()),
+            )
+        )
+        rendered = (
+            format_creative_context_packet_markdown(packet_result)
+            if args.format == "markdown"
+            else json.dumps(packet_result, ensure_ascii=False, indent=2) + "\n"
+        )
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(rendered, encoding="utf-8")
+        print(rendered, end="")
+        return 0
+
+    if args.command == "context-external-qa":
+        kernel = CreativeMemoryKernel.from_db(args.context_db)
+        question = _read_context_text(args, value_name="question", path_name="question_file", label="question")
+        llm_provider = None
+        if args.answer_with_llm:
+            llm_provider = LLMClientProvider(_build_llm_client(args, fake_task="external_qa"))
+        result = ExternalKnowledgeKernel(kernel).qa(
+            question,
+            scope=_context_scope_from_args(args),
+            top_k=args.top_k,
+            llm_provider=llm_provider,
+        )
+        rendered = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(rendered, encoding="utf-8")
+        print(rendered, end="")
+        return 0
+
+    if args.command == "context-promote-item":
+        kernel = CreativeMemoryKernel.from_db(args.context_db)
+        result = kernel.promote(
+            args.item_id,
+            args.target_layer,
+            authority=args.authority,
+            actor=args.actor,
+            reason=args.reason,
+            target_item_id=args.target_item_id,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "context-set-status":
+        kernel = CreativeMemoryKernel.from_db(args.context_db)
+        result = kernel.store.set_status(args.item_id, args.status, actor=args.actor, reason=args.reason)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "context-history":
+        kernel = CreativeMemoryKernel.from_db(args.context_db)
+        result = kernel.history(args.item_id)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "export-context-json-schemas":
+        result = write_creative_context_json_schemas(args.output_dir)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "build-context-index":
+        embedding_kwargs = _embedding_kwargs(args)
+        result = build_context_chroma_index(
+            ContextChromaIndexConfig(
+                context_db_path=args.context_db,
+                persist_dir=args.persist_dir,
+                project_id=args.project_id,
+                collection_name=args.collection_name,
+                reset=args.overwrite,
+                upsert_batch_size=args.upsert_batch_size,
+                **embedding_kwargs,
+            )
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "search-context-index":
+        embedding_kwargs = _embedding_kwargs(args)
+        result = search_context_chroma_index(
+            args.context_db,
+            persist_dir=args.persist_dir,
+            query=args.query,
+            scope=_context_scope_from_args(args),
+            collection_name=args.collection_name,
+            source_types=args.source_types,
+            item_types=args.item_types,
+            statuses=args.statuses,
+            entity_ids=args.entity_ids,
+            visibility=args.visibility,
+            top_k=args.top_k,
+            **embedding_kwargs,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "context-audit-conflicts":
+        kernel = CreativeMemoryKernel.from_db(args.context_db)
+        result = audit_external_vs_artifact_conflicts(kernel, scope=_context_scope_from_args(args), top_k=args.top_k)
+        rendered = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(rendered, encoding="utf-8")
+        print(rendered, end="")
+        return 0
+
+    if args.command == "context-export-external-entity-links":
+        kernel = CreativeMemoryKernel.from_db(args.context_db)
+        result = export_external_entity_links(kernel, scope=_context_scope_from_args(args), top_k=args.top_k)
+        rendered = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(rendered, encoding="utf-8")
+        print(rendered, end="")
+        return 0
+
+    if args.command == "context-export-external-timeline-claims":
+        kernel = CreativeMemoryKernel.from_db(args.context_db)
+        result = export_external_timeline_claims(kernel, scope=_context_scope_from_args(args), top_k=args.top_k)
+        rendered = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(rendered, encoding="utf-8")
+        print(rendered, end="")
         return 0
 
     if args.command == "query-entity-memories":
@@ -1421,6 +2082,9 @@ def main(argv: list[str] | None = None) -> int:
                 reference_character_top_k=args.reference_character_top_k,
                 reference_style_top_k=args.reference_style_top_k,
                 reference_timeline_top_k=args.reference_timeline_top_k,
+                include_reference_fact_properties=args.include_reference_fact_properties,
+                reference_fact_binding_top_k=args.reference_fact_binding_top_k,
+                reference_property_binding_top_k=args.reference_property_binding_top_k,
                 **embedding_kwargs,
             )
         )
@@ -1477,10 +2141,12 @@ def main(argv: list[str] | None = None) -> int:
             AttributeCardConfig(
                 memory_packet_path=args.memory_packet_path,
                 output_dir=args.output_dir,
+                creative_context_packet_path=args.creative_context_packet,
                 prompt_dir=args.prompt_dir,
                 entity_types=tuple(args.entity_types or ["character"]),
                 entity_names=tuple(args.entity_names or []),
                 max_memories_per_entity=args.max_memories_per_entity,
+                max_creative_context_notes_per_entity=args.max_creative_context_notes_per_entity,
                 overwrite=args.overwrite,
             ),
             llm_client=_build_llm_client(args),
@@ -1495,10 +2161,12 @@ def main(argv: list[str] | None = None) -> int:
                 output_dir=args.output_dir,
                 social_simulation_intent=args.social_simulation_intent,
                 memory_packet_path=args.memory_packet,
+                creative_context_packet_path=args.creative_context_packet,
                 prompt_dir=args.prompt_dir,
                 entity_types=tuple(args.entity_types or ["character"]),
                 entity_names=tuple(args.entity_names or []),
                 max_relevant_memories_per_entity=args.max_relevant_memories_per_entity,
+                max_creative_context_notes_per_entity=args.max_creative_context_notes_per_entity,
                 overwrite=args.overwrite,
             ),
             llm_client=_build_llm_client(args),
@@ -1512,8 +2180,10 @@ def main(argv: list[str] | None = None) -> int:
                 attribute_cards_path=args.attribute_cards_path,
                 social_simulation_intent=_read_social_simulation_intent(args),
                 scene_disposition_notes_path=args.scene_disposition_notes,
+                creative_context_packet_path=args.creative_context_packet,
                 output_dir=args.output_dir,
                 prompt_dir=args.prompt_dir,
+                max_creative_context_notes_per_entity=args.max_creative_context_notes_per_entity,
                 overwrite=args.overwrite,
             ),
             llm_client=_build_llm_client(args),
@@ -1526,6 +2196,7 @@ def main(argv: list[str] | None = None) -> int:
             SocialWritingGenerationConfig(
                 writing_request=args.writing_request,
                 memory_packet_path=args.memory_packet_file,
+                creative_context_packet_path=args.creative_context_packet_file,
                 attribute_cards_path=args.attribute_cards_file,
                 social_simulation_path=args.social_simulation_file,
                 output_dir=args.output_dir,
@@ -1579,6 +2250,9 @@ def main(argv: list[str] | None = None) -> int:
                 reference_character_top_k=args.reference_character_top_k,
                 reference_style_top_k=args.reference_style_top_k,
                 reference_timeline_top_k=args.reference_timeline_top_k,
+                include_reference_fact_properties=args.include_reference_fact_properties,
+                reference_fact_binding_top_k=args.reference_fact_binding_top_k,
+                reference_property_binding_top_k=args.reference_property_binding_top_k,
                 attribute_entity_types=tuple(args.attribute_entity_types or ["character"]),
                 attribute_entity_names=tuple(args.attribute_entity_names or []),
                 max_memories_per_entity=args.max_memories_per_entity,
@@ -1672,6 +2346,9 @@ def main(argv: list[str] | None = None) -> int:
                 reference_character_top_k=args.reference_character_top_k,
                 reference_style_top_k=args.reference_style_top_k,
                 reference_timeline_top_k=args.reference_timeline_top_k,
+                include_reference_fact_properties=args.include_reference_fact_properties,
+                reference_fact_binding_top_k=args.reference_fact_binding_top_k,
+                reference_property_binding_top_k=args.reference_property_binding_top_k,
                 unit_type=args.unit_type,
                 unit_label=args.unit_label,
                 attribute_entity_types=tuple(args.attribute_entity_types or ["character"]),

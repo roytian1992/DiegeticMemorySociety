@@ -29,6 +29,8 @@ writing_llm:
   temperature: 0.7
   timeout_seconds: 240
   reasoning_effort: high
+  thinking:
+    type: disabled
   include_chat_template_kwargs: false
 """,
         encoding="utf-8",
@@ -42,6 +44,7 @@ writing_llm:
     assert client.max_tokens == 1200
     assert client.timeout_seconds == 240
     assert client.reasoning_effort == "high"
+    assert client.thinking == {"type": "disabled"}
     assert client.include_chat_template_kwargs is False
     assert redact_model_config(config["writing_llm"])["api_key"] == "***"
     assert "secret" not in json.dumps(redact_model_config(config["writing_llm"]))
@@ -83,3 +86,24 @@ llm:
     assert client.max_tokens == 1200
     assert client.timeout_seconds == 300
     assert client.temperature == 0
+
+
+def test_build_openai_client_from_config_accepts_string_thinking_mode(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+llm:
+  provider: openai
+  model_name: gpt-5.4-mini
+  api_key: token
+  base_url: https://example.test/v1
+  thinking: disabled
+  include_chat_template_kwargs: false
+""",
+        encoding="utf-8",
+    )
+
+    client = build_openai_client_from_config(load_local_config(config_path), "llm")
+
+    assert client.thinking == {"type": "disabled"}
+    assert client.include_chat_template_kwargs is False

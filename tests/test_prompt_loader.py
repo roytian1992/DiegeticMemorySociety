@@ -58,27 +58,6 @@ def test_yaml_prompt_loader_renders_scene_summary_prompt() -> None:
     assert "scene_0001" in rendered
 
 
-def test_yaml_prompt_loader_renders_reference_items_prompt() -> None:
-    loader = YAMLPromptLoader("task_specs/prompts")
-    rendered = loader.render(
-        "dms/reference_items",
-        task_values={
-            "reference_chunk_json": {
-                "chunk_id": "ref_doc_0001_chunk_0001",
-                "title": "设定笔记",
-                "content": "550A位于数字生命研究室。",
-            }
-        },
-        static_values={"extraction_policy": "Every item needs evidence."},
-    )
-
-    assert "Extract reusable external reference items" in rendered
-    assert '"reference_items": [' in rendered
-    assert "knowledge_scope=author_only" in rendered
-    assert "Every item needs evidence" in rendered
-    assert "ref_doc_0001_chunk_0001" in rendered
-
-
 def test_yaml_prompt_loader_renders_kg_entity_refinement_prompt_without_full_text() -> None:
     loader = YAMLPromptLoader("task_specs/prompts")
     rendered = loader.render(

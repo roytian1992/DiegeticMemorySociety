@@ -393,105 +393,129 @@ class FakeDurableRelationshipClient:
         )
 
 
-class FakeReferenceItemClient:
-    """Deterministic test client for external reference item extraction tests."""
+class FakeReferenceKGClient:
+    """Deterministic LightRAG-style KG extraction client for reference tests."""
 
     provider = "fake"
-    model = "fake-reference-items"
+    model = "fake-reference-kg"
 
     def complete(self, prompt: str) -> LLMResult:
-        chunk = _extract_last_json_object_after_marker(prompt, "# Reference Chunk")
+        if "<Reference Fact/Property Job>" in prompt:
+            return FakeReferenceFactPropertyClient().complete(prompt)
+        chunk = _extract_last_json_object_after_marker(prompt, "<Reference Chunk>")
         if not isinstance(chunk, dict):
             chunk = {}
-        chunk_id = str(chunk.get("chunk_id") or "ref_chunk_unknown")
         content = "\n".join(
             str(chunk.get(field) or "")
             for field in ("title", "heading", "content")
             if str(chunk.get(field) or "").strip()
         )
-        items: list[dict[str, Any]] = []
-
+        records: list[str] = []
         if "550A" in content:
-            items.append(
-                {
-                    "item_type": "world_bible",
-                    "subject": "550A",
-                    "statement": "550A is an in-world technology or facility reference in the external material.",
-                    "evidence": "550A",
-                    "knowledge_scope": "author_only",
-                    "known_to": [],
-                    "available_from": "unknown",
-                    "timeline_hint": "",
-                    "authority": 0.7,
-                    "confidence": 0.8,
-                }
-            )
+            records.append("entity<|#|>550A<|#|>object<|#|>550A is an external-reference entity related to digital life or computing.")
         if "刘培强" in content:
-            items.append(
+            records.append("entity<|#|>刘培强<|#|>character<|#|>刘培强 appears in the external reference material.")
+        if "张鹏" in content:
+            records.append("entity<|#|>张鹏<|#|>character<|#|>张鹏 appears in the external reference material.")
+        if "2044" in content or "太空电梯" in content:
+            records.append("entity<|#|>2044 太空电梯危机<|#|>occasion<|#|>The external material mentions a 2044 space elevator crisis timeline cue.")
+        if "刘培强" in content and "550A" in content:
+            records.append("relation<|#|>刘培强<|#|>550A<|#|>character technology, knowledge<|#|>刘培强 is associated with 550A in the external reference material.")
+        if "张鹏" in content and "刘培强" in content:
+            records.append("relation<|#|>张鹏<|#|>刘培强<|#|>mentorship, training<|#|>张鹏 and 刘培强 are connected in the external reference material.")
+        if not records:
+            records.append("entity<|#|>External Reference Note<|#|>concept<|#|>The chunk contains external author-facing reference material.")
+        text = "\n".join(records + ["<|COMPLETE|>"])
+        return LLMResult(
+            text=text,
+            provider=self.provider,
+            model=self.model,
+            raw_response={"fake": True, "text": text},
+            usage={"prompt_chars": len(prompt), "completion_chars": len(text)},
+        )
+
+
+class FakeReferenceFactPropertyClient:
+    """Deterministic facts/properties extraction client for reference tests."""
+
+    provider = "fake"
+    model = "fake-reference-facts-properties"
+
+    def complete(self, prompt: str) -> LLMResult:
+        job = _extract_last_json_object_after_marker(prompt, "<Reference Fact/Property Job>")
+        if not isinstance(job, dict):
+            job = {}
+        chunks = job.get("evidence_chunks") if isinstance(job.get("evidence_chunks"), list) else []
+        first_chunk = next((chunk for chunk in chunks if isinstance(chunk, dict)), {})
+        chunk_id = str(first_chunk.get("chunk_id") or "")
+        content = "\n".join(
+            str(chunk.get("content") or "")
+            for chunk in chunks
+            if isinstance(chunk, dict) and str(chunk.get("content") or "").strip()
+        )
+        entity = job.get("entity") if isinstance(job.get("entity"), dict) else {}
+        relation = job.get("relation") if isinstance(job.get("relation"), dict) else {}
+        entity_name = str(entity.get("entity_name") or "").strip()
+        facts = []
+        properties = []
+        if job.get("asset_type") in {"entity", "entity_cluster"} and entity_name:
+            facts.append(
                 {
-                    "item_type": "character_profile",
-                    "subject": "刘培强",
-                    "statement": "刘培强 appears as a character profile anchor in the external material.",
-                    "evidence": "刘培强",
-                    "knowledge_scope": "author_only",
-                    "known_to": [],
-                    "available_from": "unknown",
-                    "timeline_hint": "",
-                    "authority": 0.7,
+                    "subject": entity_name,
+                    "predicate": "appears_in_reference",
+                    "object": "",
+                    "fact": f"{entity_name} appears in the external reference evidence.",
+                    "evidence": content[:120],
+                    "source_chunk_id": chunk_id,
                     "confidence": 0.8,
                 }
             )
-        if "2044" in content:
-            items.append(
+            properties.append(
                 {
-                    "item_type": "timeline_doc",
-                    "subject": "2044",
-                    "statement": "The external material contains a 2044 timeline cue.",
-                    "evidence": "2044",
-                    "knowledge_scope": "author_only",
-                    "known_to": [],
-                    "available_from": "unknown",
-                    "timeline_hint": "2044",
-                    "authority": 0.7,
-                    "confidence": 0.8,
+                    "entity": entity_name,
+                    "property": "profile_note",
+                    "value": f"{entity_name} has source-grounded profile information.",
+                    "statement": f"{entity_name}.profile_note: {entity_name} has source-grounded profile information.",
+                    "evidence": content[:120],
+                    "source_chunk_id": chunk_id,
+                    "confidence": 0.75,
                 }
             )
-        if "对白" in content or "台词" in content or "信息密度" in content:
-            evidence = _first_present_span(content, ("信息密度", "对白", "台词"))
-            items.append(
-                {
-                    "item_type": "style_guide",
-                    "subject": "对白",
-                    "statement": "External guidance mentions dialogue or information-density style.",
-                    "evidence": evidence,
-                    "knowledge_scope": "style_only",
-                    "known_to": [],
-                    "available_from": "story_start",
-                    "timeline_hint": "",
-                    "authority": 0.6,
-                    "confidence": 0.8,
-                }
-            )
-        if not items:
-            evidence = _extract_first_reference_evidence(chunk)
-            if evidence:
-                items.append(
+        elif job.get("asset_type") == "relationship":
+            src = str(relation.get("src_id") or "").strip()
+            tgt = str(relation.get("tgt_id") or "").strip()
+            subject = f"{src} - {tgt}".strip(" -")
+            if subject:
+                facts.append(
                     {
-                        "item_type": "author_note",
-                        "subject": str(chunk.get("heading") or chunk.get("title") or "外部资料"),
-                        "statement": "The external material contains author-facing reference notes.",
-                        "evidence": evidence,
-                        "knowledge_scope": "author_only",
-                        "known_to": [],
-                        "available_from": "unknown",
-                        "timeline_hint": "",
-                        "authority": 0.5,
-                        "confidence": 0.6,
+                        "subject": src or subject,
+                        "predicate": "related_to",
+                        "object": tgt,
+                        "fact": f"{subject} has a source-grounded relationship in the external reference evidence.",
+                        "evidence": content[:120],
+                        "source_chunk_id": chunk_id,
+                        "confidence": 0.78,
                     }
                 )
-
-        payload = {"chunk_id": chunk_id, "reference_items": items}
+        payload = {"atomic_facts": facts, "entity_properties": properties}
         text = json.dumps(payload, ensure_ascii=False, indent=2)
+        return LLMResult(
+            text=text,
+            provider=self.provider,
+            model=self.model,
+            raw_response={"fake": True, "text": text},
+            usage={"prompt_chars": len(prompt), "completion_chars": len(text)},
+        )
+
+
+class FakeExternalQAClient:
+    """Deterministic test client for source-grounded external QA plumbing."""
+
+    provider = "fake"
+    model = "fake-external-qa"
+
+    def complete(self, prompt: str) -> LLMResult:
+        text = "根据检索到的外部资料回答：张鹏是航天员教官。[E1]"
         return LLMResult(
             text=text,
             provider=self.provider,
@@ -584,7 +608,9 @@ class OpenAIChatClient:
         timeout_seconds: int = 120,
         enable_thinking: bool = False,
         reasoning_effort: str | None = None,
+        thinking: dict[str, Any] | None = None,
         include_chat_template_kwargs: bool = True,
+        stream_fallback_on_empty: bool = True,
     ) -> None:
         self.model = model or os.environ.get("OPENAI_MODEL") or "Qwen3.5-397B-A17B-FP8"
         self.base_url = (base_url or os.environ.get("OPENAI_BASE_URL") or "http://127.0.0.1:8001").rstrip("/")
@@ -594,7 +620,9 @@ class OpenAIChatClient:
         self.timeout_seconds = timeout_seconds
         self.enable_thinking = enable_thinking
         self.reasoning_effort = reasoning_effort
+        self.thinking = dict(thinking) if thinking else None
         self.include_chat_template_kwargs = include_chat_template_kwargs
+        self.stream_fallback_on_empty = stream_fallback_on_empty
 
     def complete(self, prompt: str) -> LLMResult:
         endpoint = self.base_url
@@ -611,6 +639,8 @@ class OpenAIChatClient:
         }
         if self.reasoning_effort:
             body["reasoning_effort"] = self.reasoning_effort
+        if self.thinking:
+            body["thinking"] = self.thinking
         if self.include_chat_template_kwargs:
             body["chat_template_kwargs"] = {"enable_thinking": self.enable_thinking}
         headers = {
@@ -633,6 +663,21 @@ class OpenAIChatClient:
             raise RuntimeError(f"OpenAI-compatible request failed: {exc}") from exc
 
         text = _extract_openai_chat_text(raw)
+        if self.stream_fallback_on_empty and not text.strip():
+            stream_raw = _openai_chat_stream_completion(
+                endpoint=endpoint,
+                body=body,
+                headers=headers,
+                timeout_seconds=self.timeout_seconds,
+            )
+            stream_text = _extract_openai_chat_text(stream_raw)
+            if stream_text.strip():
+                raw = {
+                    **stream_raw,
+                    "non_stream_response": raw,
+                    "stream_fallback_used": True,
+                }
+                text = stream_text
         usage = raw.get("usage") if isinstance(raw.get("usage"), dict) else {}
         return LLMResult(text=text, provider=self.provider, model=self.model, raw_response=raw, usage=usage)
 
@@ -650,6 +695,79 @@ def _extract_openai_chat_text(raw: dict[str, Any]) -> str:
     if isinstance(raw.get("text"), str):
         return raw["text"]
     return json.dumps(raw, ensure_ascii=False)
+
+
+def _openai_chat_stream_completion(
+    *,
+    endpoint: str,
+    body: dict[str, Any],
+    headers: dict[str, str],
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    stream_body = dict(body)
+    stream_body["stream"] = True
+    request = urllib.request.Request(
+        endpoint,
+        data=json.dumps(stream_body).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            payload = response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"OpenAI-compatible streaming request failed: HTTP {exc.code}: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"OpenAI-compatible streaming request failed: {exc}") from exc
+
+    text_parts: list[str] = []
+    events: list[dict[str, Any]] = []
+    usage: dict[str, Any] = {}
+    model = str(body.get("model") or "")
+    response_id = ""
+    for line in payload.splitlines():
+        line = line.strip()
+        if not line.startswith("data:"):
+            continue
+        data = line.removeprefix("data:").strip()
+        if not data or data == "[DONE]":
+            continue
+        try:
+            event = json.loads(data)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+            if event.get("id"):
+                response_id = str(event.get("id"))
+            if event.get("model"):
+                model = str(event.get("model"))
+            if isinstance(event.get("usage"), dict):
+                usage = event["usage"]
+            choices = event.get("choices")
+            if isinstance(choices, list):
+                for choice in choices:
+                    if not isinstance(choice, dict):
+                        continue
+                    delta = choice.get("delta")
+                    if isinstance(delta, dict) and isinstance(delta.get("content"), str):
+                        text_parts.append(delta["content"])
+                    message = choice.get("message")
+                    if isinstance(message, dict) and isinstance(message.get("content"), str):
+                        text_parts.append(message["content"])
+                    if isinstance(choice.get("text"), str):
+                        text_parts.append(choice["text"])
+
+    text = "".join(text_parts)
+    return {
+        "id": response_id,
+        "object": "chat.completion",
+        "model": model,
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}],
+        "usage": usage,
+        "stream_events": events,
+    }
 
 
 def _extract_anthropic_text(raw: dict[str, Any]) -> str:
@@ -691,21 +809,6 @@ def _extract_first_source_evidence(prompt: str) -> str:
             if value:
                 return value[: min(len(value), 24)]
     return _extract_unit_id(prompt)
-
-
-def _extract_first_reference_evidence(chunk: dict[str, Any]) -> str:
-    for field in ("content", "heading", "title"):
-        value = str(chunk.get(field) or "").strip()
-        if value:
-            return value[: min(len(value), 24)]
-    return ""
-
-
-def _first_present_span(text: str, candidates: tuple[str, ...]) -> str:
-    for candidate in candidates:
-        if candidate in text:
-            return candidate
-    return candidates[0] if candidates else ""
 
 
 def _extract_last_json_object_after_marker(prompt: str, marker: str) -> Any:

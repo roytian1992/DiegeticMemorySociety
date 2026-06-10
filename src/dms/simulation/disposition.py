@@ -9,6 +9,7 @@ from typing import Any
 from dms.llm import LLMClient, LLMResult
 from dms.parsing import extract_json_value
 from dms.prompts import YAMLPromptLoader
+from dms.simulation.creative_context import load_creative_context_packet, select_creative_context_notes
 
 
 @dataclass(frozen=True)
@@ -17,10 +18,12 @@ class SceneDispositionNoteConfig:
     output_dir: Path
     social_simulation_intent: str
     memory_packet_path: Path | None = None
+    creative_context_packet_path: Path | None = None
     prompt_dir: Path = Path("task_specs/prompts")
     entity_types: tuple[str, ...] = ("character",)
     entity_names: tuple[str, ...] = ()
     max_relevant_memories_per_entity: int = 6
+    max_creative_context_notes_per_entity: int = 8
     overwrite: bool = False
 
 
@@ -34,6 +37,7 @@ def build_scene_disposition_notes(config: SceneDispositionNoteConfig, llm_client
 
     cards_payload = json.loads(Path(config.attribute_cards_path).read_text(encoding="utf-8"))
     memory_packet = _load_memory_packet(config.memory_packet_path)
+    creative_context_packet = load_creative_context_packet(config.creative_context_packet_path)
     cards = _select_cards(
         _extract_cards(cards_payload),
         entity_types=config.entity_types,
@@ -49,7 +53,9 @@ def build_scene_disposition_notes(config: SceneDispositionNoteConfig, llm_client
             cards=cards,
             social_simulation_intent=config.social_simulation_intent,
             memory_packet=memory_packet,
+            creative_context_packet=creative_context_packet,
             max_relevant_memories=config.max_relevant_memories_per_entity,
+            max_creative_context_notes=config.max_creative_context_notes_per_entity,
         )
         call_id = f"disposition_{_safe_id(card.get('entity_id') or card.get('canonical_name'))}"
         (output_dir / "inputs" / f"{call_id}.json").write_text(
@@ -97,10 +103,14 @@ def build_scene_disposition_notes(config: SceneDispositionNoteConfig, llm_client
         "inputs": {
             "attribute_cards_path": str(config.attribute_cards_path),
             "memory_packet_path": str(config.memory_packet_path) if config.memory_packet_path else None,
+            "creative_context_packet_path": str(config.creative_context_packet_path)
+            if config.creative_context_packet_path
+            else None,
             "social_simulation_intent": config.social_simulation_intent,
             "entity_types": list(config.entity_types),
             "entity_names": list(config.entity_names),
             "max_relevant_memories_per_entity": config.max_relevant_memories_per_entity,
+            "max_creative_context_notes_per_entity": config.max_creative_context_notes_per_entity,
         },
         "note_count": len(notes),
         "scene_disposition_notes": notes,
@@ -153,10 +163,13 @@ def _build_note_context(
     cards: list[dict[str, Any]],
     social_simulation_intent: str,
     memory_packet: dict[str, Any],
+    creative_context_packet: dict[str, Any],
     max_relevant_memories: int,
+    max_creative_context_notes: int,
 ) -> dict[str, Any]:
     target_name = str(card.get("canonical_name") or "")
     packet_entity = _find_packet_entity(card, memory_packet)
+    entity_for_context = packet_entity or card
     return {
         "social_simulation_intent": social_simulation_intent,
         "target_card": card,
@@ -170,6 +183,11 @@ def _build_note_context(
             memory_packet,
             limit=max(max_relevant_memories, 0),
         ),
+        "creative_context_notes": select_creative_context_notes(
+            creative_context_packet,
+            entity_for_context,
+            limit=max(max_creative_context_notes, 0),
+        ),
         "other_visible_cards": [
             _compact_peer_card(peer)
             for peer in cards
@@ -182,6 +200,7 @@ def _build_note_context(
             "writing_spec_visible": False,
             "relevant_memory_notes_policy": "Use these compact prefix-memory notes to ground the scene-conditioned prior; do not output separate refs fields.",
             "relevant_reference_notes_policy": "Use these visible external-reference notes only as background knowledge; do not treat them as screenplay events.",
+            "creative_context_notes_policy": "Use source-aware creative context as soft prior. External references remain non-canonical unless marked canonical.",
         },
     }
 

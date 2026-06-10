@@ -67,7 +67,7 @@ class FakeWritingJudgeClient:
                 "issues": [],
             }
         else:
-            raise AssertionError(f"Unexpected prompt:\n{prompt[:500]}")
+            raise AssertionError(f"Unexpected prompt:\n{prompt}")
         text = json.dumps(payload, ensure_ascii=False)
         return LLMResult(
             text=text,

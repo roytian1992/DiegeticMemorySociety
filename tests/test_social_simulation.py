@@ -60,7 +60,7 @@ class FakeSocialSimulationClient:
                 "writer_guidance": [{"guidance": "先动作后对白", "refs": ["M1"]}],
             }
         else:
-            raise AssertionError(f"Unexpected prompt:\n{prompt[:500]}")
+            raise AssertionError(f"Unexpected prompt:\n{prompt}")
         text = json.dumps(payload, ensure_ascii=False)
         return LLMResult(
             text=text,
@@ -76,6 +76,8 @@ def test_run_social_simulation_from_attribute_cards(tmp_path: Path) -> None:
     cards_path.write_text(json.dumps(_cards(), ensure_ascii=False), encoding="utf-8")
     notes_path = tmp_path / "scene_disposition_notes.json"
     notes_path.write_text(json.dumps(_scene_disposition_notes(), ensure_ascii=False), encoding="utf-8")
+    creative_context_path = tmp_path / "creative_context_packet.json"
+    creative_context_path.write_text(json.dumps(_creative_context_packet(), ensure_ascii=False), encoding="utf-8")
     client = FakeSocialSimulationClient()
 
     summary = run_social_simulation(
@@ -83,6 +85,7 @@ def test_run_social_simulation_from_attribute_cards(tmp_path: Path) -> None:
             attribute_cards_path=cards_path,
             social_simulation_intent="刘培强和张鹏在返航途中互动。",
             scene_disposition_notes_path=notes_path,
+            creative_context_packet_path=creative_context_path,
             output_dir=tmp_path / "simulation",
             overwrite=True,
         ),
@@ -92,6 +95,7 @@ def test_run_social_simulation_from_attribute_cards(tmp_path: Path) -> None:
     assert summary["character_simulation_count"] == 2
     assert summary["inputs"]["social_simulation_intent"] == "刘培强和张鹏在返航途中互动。"
     assert summary["inputs"]["scene_disposition_note_count"] == 2
+    assert summary["inputs"]["creative_context_packet_path"] == str(creative_context_path)
     assert summary["scene_disposition_notes"][0]["scene_disposition_note"].startswith("张鹏在场")
     assert summary["inputs"]["source_isolation"]["target_scene_text_visible"] is False
     assert summary["inputs"]["source_isolation"]["writing_spec_visible"] is False
@@ -106,6 +110,8 @@ def test_run_social_simulation_from_attribute_cards(tmp_path: Path) -> None:
     assert summary["verification"]["status"] in {"pass", "warn"}
     assert summary["writer_packet_verification"]["status"] in {"pass", "warn"}
     assert len(client.prompts) == 3
+    assert any("creative_context_notes" in prompt for prompt in client.prompts)
+    assert any("张鹏在亲近对象有风险时会更谨慎" in prompt for prompt in client.prompts)
     assert (tmp_path / "simulation" / "character_simulations.json").is_file()
     assert (tmp_path / "simulation" / "social_simulation.json").is_file()
     assert (tmp_path / "simulation" / "algorithmic_social_plan.json").is_file()
@@ -195,3 +201,32 @@ def _scene_disposition_notes() -> list[dict]:
             "scene_disposition_note": "张鹏在当前场景里更像压舱石，用务实提醒压住对方的慌乱。",
         },
     ]
+
+
+def _creative_context_packet() -> dict:
+    return {
+        "simulation_context": [
+            {
+                "item_id": "sim:zhangpeng:soft_prior",
+                "source_type": "simulation",
+                "status": "tentative",
+                "authority": "model_inferred",
+                "subject": "张鹏",
+                "statement": "张鹏在亲近对象有风险时会更谨慎，但表达仍偏务实。",
+                "entity_ids": ["character_0017"],
+                "visibility": "author_only",
+            }
+        ],
+        "conversation_guidance": [
+            {
+                "item_id": "conv:liu:soft_prior",
+                "source_type": "conversation",
+                "status": "active",
+                "authority": "user_explicit",
+                "subject": "刘培强",
+                "statement": "刘培强面对张鹏提醒时会收敛一点，但嘴硬仍在。",
+                "entity_ids": ["character_0011"],
+                "visibility": "author_only",
+            }
+        ],
+    }

@@ -10,6 +10,7 @@ from dms.llm import LLMClient, LLMResult
 from dms.parsing import extract_json_value
 from dms.prompts import YAMLPromptLoader
 from dms.simulation.algorithmic import build_algorithmic_social_plan
+from dms.simulation.creative_context import load_creative_context_packet, select_creative_context_notes
 from dms.simulation.formatting import format_social_simulation_markdown, format_social_simulation_writer_packet
 from dms.simulation.verification import verify_social_simulation, verify_writer_packet
 
@@ -31,9 +32,11 @@ class SocialSimulationConfig:
     output_dir: Path
     social_simulation_intent: str = ""
     scene_disposition_notes_path: Path | None = None
+    creative_context_packet_path: Path | None = None
     prompt_dir: Path = Path("task_specs/prompts")
     overwrite: bool = False
     writing_intent: str = ""
+    max_creative_context_notes_per_entity: int = 8
 
 
 def run_social_simulation(config: SocialSimulationConfig, llm_client: LLMClient) -> dict[str, Any]:
@@ -47,6 +50,7 @@ def run_social_simulation(config: SocialSimulationConfig, llm_client: LLMClient)
     cards_payload = json.loads(Path(config.attribute_cards_path).read_text(encoding="utf-8"))
     cards = _extract_cards(cards_payload)
     scene_disposition_notes = _load_scene_disposition_notes(config.scene_disposition_notes_path)
+    creative_context_packet = load_creative_context_packet(config.creative_context_packet_path)
     social_simulation_intent = _resolve_social_simulation_intent(config)
     loader = YAMLPromptLoader(config.prompt_dir)
     calls: list[dict[str, Any]] = []
@@ -58,6 +62,8 @@ def run_social_simulation(config: SocialSimulationConfig, llm_client: LLMClient)
             cards=cards,
             social_simulation_intent=social_simulation_intent,
             scene_disposition_notes=scene_disposition_notes,
+            creative_context_packet=creative_context_packet,
+            max_creative_context_notes=config.max_creative_context_notes_per_entity,
         )
         _assert_no_forbidden_source_context(context, path=f"character:{card.get('canonical_name') or card.get('entity_id')}")
         call_id = f"character_{_safe_id(card.get('entity_id') or card.get('canonical_name'))}"
@@ -81,6 +87,11 @@ def run_social_simulation(config: SocialSimulationConfig, llm_client: LLMClient)
         "prefix_boundary": _prefix_boundary(cards),
         "attribute_cards": cards,
         "scene_disposition_notes": scene_disposition_notes,
+        "creative_context_notes": _select_global_creative_context_notes(
+            creative_context_packet,
+            cards,
+            limit=max(config.max_creative_context_notes_per_entity * max(len(cards), 1), 0),
+        ),
         "character_simulations": character_simulations,
     }
     _assert_no_forbidden_source_context(coordinator_context, path="coordinator")
@@ -124,9 +135,13 @@ def run_social_simulation(config: SocialSimulationConfig, llm_client: LLMClient)
             "scene_disposition_notes_path": str(config.scene_disposition_notes_path)
             if config.scene_disposition_notes_path
             else None,
+            "creative_context_packet_path": str(config.creative_context_packet_path)
+            if config.creative_context_packet_path
+            else None,
             "social_simulation_intent": social_simulation_intent,
             "card_count": len(cards),
             "scene_disposition_note_count": len(scene_disposition_notes),
+            "max_creative_context_notes_per_entity": config.max_creative_context_notes_per_entity,
             "source_isolation": {
                 "target_scene_text_visible": False,
                 "writing_spec_visible": False,
@@ -250,6 +265,8 @@ def _build_character_simulation_context(
     cards: list[dict[str, Any]],
     social_simulation_intent: str,
     scene_disposition_notes: list[dict[str, str]],
+    creative_context_packet: dict[str, Any],
+    max_creative_context_notes: int,
 ) -> dict[str, Any]:
     target_name = str(card.get("canonical_name") or "")
     target_note = _find_scene_disposition_note(card, scene_disposition_notes)
@@ -262,6 +279,11 @@ def _build_character_simulation_context(
         "social_simulation_intent": social_simulation_intent,
         "target_card": card,
         "scene_disposition_note": target_note,
+        "creative_context_notes": select_creative_context_notes(
+            creative_context_packet,
+            card,
+            limit=max(max_creative_context_notes, 0),
+        ),
         "other_visible_cards": other_cards,
         "instructions": {
             "output_language": "Chinese",
@@ -270,8 +292,27 @@ def _build_character_simulation_context(
             "writing_spec_visible": False,
             "use_only_intent_and_prefix_cards": True,
             "scene_disposition_note_policy": "Use as scene-conditioned behavior guidance; do not treat as memory evidence.",
+            "creative_context_notes_policy": "Use source-aware creative context as soft prior. External references are background unless canonical.",
         },
     }
+
+
+def _select_global_creative_context_notes(
+    creative_context_packet: dict[str, Any],
+    cards: list[dict[str, Any]],
+    *,
+    limit: int,
+) -> list[str]:
+    notes: list[str] = []
+    seen: set[str] = set()
+    for card in cards:
+        for note in select_creative_context_notes(creative_context_packet, card, limit=max(limit, 0)):
+            if note not in seen:
+                notes.append(note)
+                seen.add(note)
+            if len(notes) >= limit:
+                return notes
+    return notes
 
 
 def _find_scene_disposition_note(card: dict[str, Any], notes: list[dict[str, str]]) -> str:

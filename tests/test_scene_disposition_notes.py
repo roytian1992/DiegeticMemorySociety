@@ -29,13 +29,16 @@ class FakeDispositionClient:
 def test_build_scene_disposition_notes_keeps_flat_schema(tmp_path: Path) -> None:
     cards_path = tmp_path / "attribute_cards.json"
     memory_packet_path = tmp_path / "memory_packet.json"
+    creative_context_path = tmp_path / "creative_context_packet.json"
     cards_path.write_text(json.dumps(_cards(), ensure_ascii=False), encoding="utf-8")
     memory_packet_path.write_text(json.dumps(_memory_packet(), ensure_ascii=False), encoding="utf-8")
+    creative_context_path.write_text(json.dumps(_creative_context_packet(), ensure_ascii=False), encoding="utf-8")
 
     summary = build_scene_disposition_notes(
         SceneDispositionNoteConfig(
             attribute_cards_path=cards_path,
             memory_packet_path=memory_packet_path,
+            creative_context_packet_path=creative_context_path,
             social_simulation_intent="刘培强和张鹏在返航途中互动。",
             output_dir=tmp_path / "notes",
             overwrite=True,
@@ -45,6 +48,7 @@ def test_build_scene_disposition_notes_keeps_flat_schema(tmp_path: Path) -> None
 
     assert summary["note_count"] == 2
     assert summary["inputs"]["memory_packet_path"] == str(memory_packet_path)
+    assert summary["inputs"]["creative_context_packet_path"] == str(creative_context_path)
     note = summary["scene_disposition_notes"][0]
     assert set(note) == {"entity_id", "canonical_name", "scene_disposition_note"}
     assert "scene_disposition_note" in note
@@ -62,6 +66,7 @@ def test_build_scene_disposition_notes_keeps_flat_schema(tmp_path: Path) -> None
     assert context["relevant_reference_notes"] == [
         "REF:ref_liu_550a 刘培强: 刘培强知道550A能够分析脑电波。 [character_private]"
     ]
+    assert any("在张鹏面前更收敛" in note for note in context["creative_context_notes"])
 
 
 def test_format_scene_disposition_notes_markdown() -> None:
@@ -154,4 +159,21 @@ def _memory_packet() -> dict:
                 "known_to": ["张鹏"],
             },
         ],
+    }
+
+
+def _creative_context_packet() -> dict:
+    return {
+        "conversation_guidance": [
+            {
+                "item_id": "conv:liu:prior",
+                "source_type": "conversation",
+                "status": "active",
+                "authority": "user_explicit",
+                "subject": "刘培强",
+                "statement": "刘培强在张鹏面前更收敛，但不会完全服软。",
+                "entity_ids": ["character_001"],
+                "visibility": "author_only",
+            }
+        ]
     }

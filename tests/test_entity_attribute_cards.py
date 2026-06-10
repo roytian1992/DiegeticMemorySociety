@@ -47,11 +47,14 @@ class FakeAttributeCardClient:
 
 def test_build_entity_attribute_cards_from_memory_packet(tmp_path: Path) -> None:
     packet_path = tmp_path / "packet.json"
+    creative_context_path = tmp_path / "creative_context_packet.json"
     packet_path.write_text(json.dumps(_packet(), ensure_ascii=False), encoding="utf-8")
+    creative_context_path.write_text(json.dumps(_creative_context_packet(), ensure_ascii=False), encoding="utf-8")
 
     summary = build_entity_attribute_cards(
         AttributeCardConfig(
             memory_packet_path=packet_path,
+            creative_context_packet_path=creative_context_path,
             output_dir=tmp_path / "cards",
             overwrite=True,
         ),
@@ -59,6 +62,7 @@ def test_build_entity_attribute_cards_from_memory_packet(tmp_path: Path) -> None
     )
 
     assert summary["card_count"] == 1
+    assert summary["inputs"]["creative_context_packet_path"] == str(creative_context_path)
     card = summary["cards"][0]
     assert card["canonical_name"] == "刘培强"
     assert card["salient_past_actions"][0]["action"] == "曾驾驶J20C"
@@ -72,6 +76,7 @@ def test_build_entity_attribute_cards_from_memory_packet(tmp_path: Path) -> None
     context = json.loads((tmp_path / "cards" / "inputs" / "character_001.json").read_text(encoding="utf-8"))
     assert context["entity"]["author_profile"]["speaking_style"] == ["短句", "压着情绪说"]
     assert context["character_reference_knowledge"][0]["ref_id"] == "REF:ref_liu_knows_550a"
+    assert any("不要把刘培强写成完全放下嘴硬" in note for note in context["creative_context_notes"])
     assert "REF:ref_liu_knows_550a" in context["instructions"]["available_reference_ids"]
     markdown = (tmp_path / "cards" / "attribute_cards.md").read_text(encoding="utf-8")
     assert "## 刘培强 (character)" in markdown
@@ -226,5 +231,34 @@ def _packet() -> dict:
                 "known_to": ["张鹏"],
                 "available_from": "story_start",
             },
+        ],
+    }
+
+
+def _creative_context_packet() -> dict:
+    return {
+        "conversation_guidance": [
+            {
+                "item_id": "conv:liu:constraint",
+                "source_type": "conversation",
+                "status": "active",
+                "authority": "user_explicit",
+                "subject": "刘培强",
+                "statement": "不要把刘培强写成完全放下嘴硬。",
+                "entity_ids": ["character_001"],
+                "visibility": "author_only",
+            }
+        ],
+        "external_reference_context": [
+            {
+                "item_id": "external:liu:profile",
+                "source_type": "external_reference",
+                "status": "active",
+                "authority": "external_source",
+                "subject": "刘培强",
+                "statement": "外部资料称刘培强是飞行员。",
+                "entity_ids": ["character_001"],
+                "visibility": "author_only",
+            }
         ],
     }

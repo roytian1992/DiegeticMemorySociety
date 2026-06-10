@@ -7,6 +7,7 @@ requires-python = ">=3.10"
 dependencies = [
   "json-repair>=0.39.0",
   "langchain-text-splitters>=0.3.8",
+  "python-docx>=1.1.2",
   "PyYAML>=6.0",
 ]
 
@@ -14,9 +15,14 @@ dependencies = [
 dev = [
   "pytest>=8.0",
 ]
+service = [
+  "fastapi>=0.110",
+  "uvicorn>=0.29",
+]
 
 [project.scripts]
 dms = "dms.cli:main"
+dms-service = "dms.service.fastapi_app:main"
 
 [build-system]
 requires = ["setuptools>=68"]

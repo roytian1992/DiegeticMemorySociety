@@ -9,7 +9,15 @@ from dms.retrieval import (
     decompose_writing_intent,
     format_memory_packet_markdown,
 )
-from dms.reference_library import ReferenceItemImportConfig, import_reference_items
+from dms.llm import FakeReferenceKGClient
+from dms.reference_library import (
+    ReferenceKGExtractionConfig,
+    ReferenceKnowledgeImportConfig,
+    ReferenceLibraryIngestConfig,
+    extract_reference_kg,
+    import_reference_knowledge,
+    ingest_reference_library,
+)
 from dms.storage import AssetStoreImportConfig, ChromaMemoryIndexConfig, build_chroma_memory_index, import_run_assets
 from tests.helpers import write_jsonl
 from tests.storage.test_asset_store import _write_sample_ordered_run
@@ -180,70 +188,28 @@ def test_memory_packet_optionally_includes_external_reference_context(tmp_path: 
     import_run_assets(AssetStoreImportConfig(db_path=db_path, ordered_run_dir=run_root, reset=True))
     build_chroma_memory_index(ChromaMemoryIndexConfig(db_path=db_path, persist_dir=chroma_dir, reset=True, embedding_dim=64))
 
-    reference_items = tmp_path / "reference_items.jsonl"
-    write_jsonl(
-        reference_items,
-        [
-            {
-                "item_id": "ref_world_550a",
-                "doc_id": "world_bible",
-                "item_type": "world_bible",
-                "subject": "550A",
-                "statement": "550A是数字生命研究室里的量子计算机。",
-                "evidence": "世界观设定：550A负责脑电波分析。",
-                "knowledge_scope": "world_public",
-                "known_to": "all",
-                "authority": 0.9,
-                "confidence": 0.95,
-            },
-            {
-                "item_id": "ref_liu_private",
-                "doc_id": "profiles",
-                "item_type": "character_profile",
-                "subject": "刘培强",
-                "statement": "刘培强知道550A能够分析脑电波。",
-                "evidence": "角色档案：刘培强了解550A基础能力。",
-                "knowledge_scope": "character_private",
-                "known_to": ["刘培强"],
-                "authority": 0.8,
-                "confidence": 0.9,
-            },
-            {
-                "item_id": "ref_author_note",
-                "doc_id": "notes",
-                "item_type": "author_note",
-                "subject": "张鹏",
-                "statement": "张鹏承担压住刘培强冲动的写作功能。",
-                "knowledge_scope": "author_only",
-                "authority": 0.7,
-                "confidence": 0.8,
-            },
-            {
-                "item_id": "ref_style",
-                "doc_id": "style",
-                "item_type": "style_guide",
-                "subject": "驾驶舱对白",
-                "statement": "驾驶舱对白应短促，不做长篇解释。",
-                "knowledge_scope": "style_only",
-                "authority": 0.6,
-                "confidence": 0.9,
-            },
-            {
-                "item_id": "ref_future",
-                "doc_id": "timeline",
-                "item_type": "timeline_doc",
-                "subject": "550A",
-                "statement": "后续章节才揭示550A的限制。",
-                "knowledge_scope": "revealed_by_story",
-                "known_to": "all",
-                "available_from": "scene_0010",
-                "authority": 0.7,
-                "confidence": 0.8,
-            },
-        ],
+    refs_dir = tmp_path / "refs"
+    refs_dir.mkdir()
+    (refs_dir / "profiles.md").write_text(
+        "# 人物\n刘培强第一次接触550A训练。张鹏指导刘培强保持稳定。\n",
+        encoding="utf-8",
     )
+    reference_library_dir = tmp_path / "reference_library"
+    reference_kg_dir = tmp_path / "reference_kg"
     reference_db = tmp_path / "reference.sqlite"
-    import_reference_items(ReferenceItemImportConfig(items_path=reference_items, db_path=reference_db, reset=True))
+    ingest_reference_library(ReferenceLibraryIngestConfig(input_path=refs_dir, output_dir=reference_library_dir))
+    extract_reference_kg(
+        ReferenceKGExtractionConfig(library_dir=reference_library_dir, output_dir=reference_kg_dir, dry_run=False),
+        llm_client=FakeReferenceKGClient(),
+    )
+    import_reference_knowledge(
+        ReferenceKnowledgeImportConfig(
+            library_dir=reference_library_dir,
+            kg_dir=reference_kg_dir,
+            db_path=reference_db,
+            reset=True,
+        )
+    )
 
     packet_without_refs = build_memory_packet(
         MemoryPacketConfig(
@@ -276,22 +242,13 @@ def test_memory_packet_optionally_includes_external_reference_context(tmp_path: 
     )
 
     assert packet["trace"]["reference_context_retrieval"]["enabled"] is True
-    assert {item["item_id"] for item in packet["author_reference_context"]} >= {
-        "ref_world_550a",
-        "ref_liu_private",
-        "ref_author_note",
-    }
-    assert {item["item_id"] for item in packet["character_reference_knowledge"]} == {
-        "ref_world_550a",
-        "ref_liu_private",
-    }
-    assert packet["style_reference_context"][0]["item_id"] == "ref_style"
-    assert "ref_future" not in {item["item_id"] for item in packet["timeline_reference_claims"]}
+    assert packet["trace"]["reference_context_retrieval"]["asset_model"] == "source_local_external_reference_v1"
+    assert {item["subject"] for item in packet["author_reference_context"]} >= {"刘培强", "550A", "张鹏"}
+    assert {item["subject"] for item in packet["character_reference_knowledge"]} >= {"刘培强"}
     markdown = format_memory_packet_markdown(packet)
     assert "## Author Reference Context" in markdown
     assert "## Character Reference Knowledge" in markdown
-    assert "刘培强知道550A能够分析脑电波" in markdown
-    assert "驾驶舱对白应短促" in markdown
+    assert "刘培强 appears" in markdown
 
 
 def test_memory_packet_markdown_wraps_reference_text() -> None:

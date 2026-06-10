@@ -46,7 +46,7 @@ class WritingE2EConfig:
     include_reference_context: bool = False
     reference_db_path: Path | None = None
     reference_chroma_dir: Path | None = None
-    reference_collection_name: str = "dms_reference_documents"
+    reference_collection_name: str = "dms_reference_knowledge"
     reference_top_k: int = 6
     reference_author_top_k: int = 6
     reference_character_top_k: int = 6

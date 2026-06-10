@@ -42,11 +42,13 @@ writing_llm:
         encoding="utf-8",
     )
     memory_path = tmp_path / "memory.md"
+    creative_context_path = tmp_path / "creative_context.md"
     cards_path = tmp_path / "cards.md"
     social_path = tmp_path / "social.md"
     style_path = tmp_path / "style.md"
     previous_path = tmp_path / "previous.md"
     memory_path.write_text("# Memory Packet\n", encoding="utf-8")
+    creative_context_path.write_text("# Creative Context\n\n- 不要把张鹏写成法定监护人。\n", encoding="utf-8")
     cards_path.write_text("# Attribute Cards\n", encoding="utf-8")
     social_path.write_text("# Social Simulation\n", encoding="utf-8")
     style_path.write_text("张鹏：慢点。\n", encoding="utf-8")
@@ -57,6 +59,7 @@ writing_llm:
         SocialWritingGenerationConfig(
             writing_request="写一段J20C返航，展现刘培强和张鹏互动。",
             memory_packet_path=memory_path,
+            creative_context_packet_path=creative_context_path,
             attribute_cards_path=cards_path,
             social_simulation_path=social_path,
             previous_scene_context_path=previous_path,
@@ -73,7 +76,10 @@ writing_llm:
     assert (tmp_path / "out" / "prompt.md").is_file()
     assert (tmp_path / "out" / "previous_scene_context.md").is_file()
     assert "上一场景。" in (tmp_path / "out" / "prompt.md").read_text(encoding="utf-8")
+    assert "不要把张鹏写成法定监护人" in (tmp_path / "out" / "prompt.md").read_text(encoding="utf-8")
     assert summary["inputs"]["previous_scene_context_chars"] > 0
+    assert summary["inputs"]["creative_context_packet_path"] == str(creative_context_path)
+    assert summary["creative_context_packet_chars"] > 0
     assert (tmp_path / "out" / "draft.md").read_text(encoding="utf-8").startswith("J20C")
     quick_eval = json.loads((tmp_path / "out" / "quick_eval.json").read_text(encoding="utf-8"))
     assert quick_eval["writer_packet_artifact_terms_present"] == []

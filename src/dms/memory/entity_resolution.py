@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections import defaultdict
@@ -615,7 +616,8 @@ def _canonical_key(name: str) -> str:
 def _canonical_key_for_mention(name: str, mention: dict[str, Any]) -> str:
     base = _canonical_key(name)
     if _is_deictic_name(name):
-        return f"deictic:{base}:{mention.get('scene_id')}:{mention.get('source')}:{_normalize_name(mention.get('evidence', ''))[:24]}"
+        evidence_key = hashlib.sha1(_normalize_name(mention.get("evidence", "")).encode("utf-8")).hexdigest()
+        return f"deictic:{base}:{mention.get('scene_id')}:{mention.get('source')}:{evidence_key}"
 
     entity_type = normalize_entity_type(mention.get("entity_type"))
     if entity_type == "object":
