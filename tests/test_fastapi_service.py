@@ -7,7 +7,13 @@ import pytest
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
-from dms.service.fastapi_app import DMSServiceSettings, create_app
+from dms.service.fastapi_app import (
+    DMSServiceSettings,
+    create_app,
+    service_host_port_from_config,
+    settings_from_config,
+    write_service_config_template,
+)
 
 
 def test_fastapi_memory_add_search_get_all(tmp_path: Path) -> None:
@@ -91,3 +97,61 @@ def test_fastapi_service_only_exposes_memory_facade(tmp_path: Path) -> None:
     assert client.get("/jobs").status_code == 404
     assert client.get("/references/counts").status_code == 404
     assert client.post("/context/search", json={}).status_code == 404
+
+
+def test_fastapi_service_settings_can_be_loaded_from_yaml_config(tmp_path: Path) -> None:
+    config_path = tmp_path / "local_config.yaml"
+    config_path.write_text(
+        f"""
+llm:
+  provider: openai
+  model_name: fake-model
+  api_key: token
+  base_url: http://127.0.0.1:8001
+embedding:
+  provider: hash
+  dimensions: 64
+external_references:
+  provider: fake
+  model_section: llm
+  embedding_section: embedding
+  db_path: {tmp_path / "refs.sqlite"}
+  work_dir: {tmp_path / "work"}
+  collection_name: configured_collection
+  workers: 3
+  extract_fact_properties: false
+  entity_disambiguation: false
+service:
+  host: 0.0.0.0
+  port: 8765
+""",
+        encoding="utf-8",
+    )
+
+    settings = settings_from_config(config_path)
+    host, port = service_host_port_from_config(config_path)
+    app = create_app(settings)
+    client = TestClient(app)
+
+    assert settings.reference_db_path == tmp_path / "refs.sqlite"
+    assert settings.work_dir == tmp_path / "work"
+    assert settings.reference_collection_name == "configured_collection"
+    assert settings.workers == 3
+    assert settings.extract_fact_properties is False
+    assert settings.entity_disambiguation is False
+    assert settings.provider == "fake"
+    assert host == "0.0.0.0"
+    assert port == 8765
+    assert client.get("/health").json()["reference_db_path"] == str(tmp_path / "refs.sqlite")
+
+
+def test_fastapi_service_can_write_starter_config(tmp_path: Path) -> None:
+    config_path = tmp_path / "generated_config.yaml"
+
+    result = write_service_config_template(config_path)
+
+    assert result == {"config_path": str(config_path), "status": "created"}
+    text = config_path.read_text(encoding="utf-8")
+    assert "external_references:" in text
+    assert "service:" in text
+    assert "llm:" in text

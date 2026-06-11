@@ -1,15 +1,15 @@
 # External References 使用说明
 
-External References 对外只暴露一层 memory-style facade：
+External References 提供一组 memory-style 接口：
 `add`、`search`、`get_all`。应用侧不需要直接关心底层的 ingest、KG
 抽取、fact/property 抽取、SQLite import、Chroma indexing 等步骤；这些都由
 `add` 内部串起来。
 
-核心原则：
+使用方式概览：
 
 - 模型、embedding、API 地址、token 都从本地配置文件读取。
-- 文档路径、DB 路径、work dir、并发数这类运行参数由调用方传入或用环境变量配置。
-- FastAPI 服务只提供 `add/search/get_all`，不暴露内部 pipeline 或 context kernel。
+- 文档路径、DB 路径、work dir、并发数这类运行参数由配置文件或请求参数提供。
+- FastAPI 服务提供 `add/search/get_all` 三个主要接口。
 - fact/property 抽取是 ingest 阶段开关；检索阶段可单独控制是否返回 facts/properties，并按 query 相似度绑定 top-k。
 
 ## 安装依赖
@@ -29,7 +29,7 @@ pip install -e '.[service]'
 
 ## 本地配置文件
 
-`configs/local_config.yaml` 是本地私有配置，已在 `.gitignore` 中，不应提交。
+`configs/local_config.yaml` 用于保存本机模型服务和 embedding 服务配置，已在 `.gitignore` 中。
 可以参考 `configs/default.yaml` 创建，并补充 LLM 和 embedding 配置：
 
 ```yaml
@@ -65,9 +65,9 @@ include_chat_template_kwargs: false
 
 ## Python 调用
 
-产品代码里不要手写 model/base_url/api_key。推荐用
-`load_local_config`、`build_openai_client_from_config` 和
-`embedding_kwargs_from_config` 从配置文件构造 facade。
+Python 侧通常先读取本地配置，再创建 `ExternalReferences` 实例。
+`load_local_config` 负责读取 YAML，`build_openai_client_from_config` 负责创建
+LLM client，`embedding_kwargs_from_config` 负责生成 embedding 参数。
 
 ```python
 from pathlib import Path
@@ -154,35 +154,48 @@ all_docs = refs.get_all()
 
 ## FastAPI 服务
 
-服务读取环境变量构造 `ExternalReferencesConfig`。模型和 embedding 从
-`DMS_MODEL_CONFIG` 指向的 YAML 配置读取。
+服务直接读取 YAML 配置。第一次使用可以生成模板：
 
 ```bash
-export DMS_PROVIDER=openai
-export DMS_MODEL_CONFIG=configs/local_config.yaml
-export DMS_MODEL_SECTION=llm
-export DMS_EMBEDDING_SECTION=embedding
-
-export DMS_REFERENCE_DB=runs/reference_library/we2_refs.sqlite
-export DMS_REFERENCE_WORK_DIR=runs/reference_library/service_work
-export DMS_REFERENCE_CHROMA_DIR=
-export DMS_REFERENCE_COLLECTION=dms_reference_knowledge
-
-export DMS_WORKERS=8
-export DMS_EXTRACT_FACT_PROPERTIES=true
-export DMS_ENTITY_DISAMBIGUATION=true
-export DMS_DISAMBIGUATION_LEXICAL_THRESHOLD=0.88
-
-dms-service --host 127.0.0.1 --port 8000
+dms-service --init-config configs/local_config.yaml
 ```
 
-本地 smoke test 可以不用真实 LLM：
+然后编辑 `configs/local_config.yaml` 中的 `llm`、`embedding` 和
+`external_references` section。服务相关配置放在 `service` section：
+
+```yaml
+external_references:
+  provider: openai
+  model_section: llm
+  embedding_section: embedding
+  db_path: runs/reference_library/we2_refs.sqlite
+  work_dir: runs/reference_library/service_work
+  chroma_dir:
+  collection_name: dms_reference_knowledge
+  workers: 8
+  max_chunk_chars: 2400
+  max_retries: 1
+  extract_fact_properties: true
+  reference_fact_min_entity_degree: 2
+  reference_fact_max_evidence_chunks_per_job: 12
+  entity_disambiguation: true
+  disambiguation_lexical_threshold: 0.88
+  auto_index: false
+  reset_on_add: true
+
+service:
+  host: 127.0.0.1
+  port: 8000
+```
+
+启动服务：
 
 ```bash
-export DMS_PROVIDER=fake
-export DMS_REFERENCE_DB=runs/reference_library/smoke_refs.sqlite
-dms-service --host 127.0.0.1 --port 8000
+dms-service --config configs/local_config.yaml
 ```
+
+如果当前目录存在 `configs/local_config.yaml`，也可以直接运行 `dms-service`。
+`--host` 和 `--port` 只作为临时覆盖项使用。
 
 接口：
 
@@ -231,9 +244,9 @@ curl -X POST http://127.0.0.1:8000/search \
 curl http://127.0.0.1:8000/get_all
 ```
 
-## CLI 调试 pipeline
+## CLI 调试流程
 
-正常产品调用建议用 Python facade 或 FastAPI。CLI 主要用于检查中间产物。
+Python 接口和 FastAPI 服务适合应用集成；CLI 适合检查中间产物、定位抽取或导入问题。
 
 ```bash
 python -m dms.cli ingest-reference-library \
@@ -310,7 +323,7 @@ python -m dms.cli query-reference-knowledge \
 - `results`：已导入的 source documents。
 - `counts`：reference DB 内各资产表的数量。
 
-## 推荐默认值
+## 常用配置组合
 
 小规模调试：
 
