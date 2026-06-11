@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -34,50 +33,7 @@ else:
     _FASTAPI_IMPORT_ERROR = None
 
 
-DEFAULT_SERVICE_CONFIG_TEMPLATE = """\
-llm:
-  provider: openai
-  model_name: Qwen3.5-397B-A17B-FP8
-  api_key: YOUR_LOCAL_API_KEY
-  base_url: http://127.0.0.1:8001
-  max_tokens: 3072
-  temperature: 0
-  timeout_seconds: 240
-  enable_thinking: false
-  include_chat_template_kwargs: true
-
-embedding:
-  provider: openai
-  model_name: bge-m3
-  api_key: YOUR_LOCAL_API_KEY
-  base_url: http://127.0.0.1:8081
-  max_tokens: 8192
-  dimensions: 1024
-  timeout_seconds: 60
-
-external_references:
-  provider: openai
-  model_section: llm
-  embedding_section: embedding
-  db_path: runs/reference_library/we2_refs.sqlite
-  work_dir: runs/reference_library/service_work
-  chroma_dir:
-  collection_name: dms_reference_knowledge
-  workers: 8
-  max_chunk_chars: 2400
-  max_retries: 1
-  extract_fact_properties: true
-  reference_fact_min_entity_degree: 2
-  reference_fact_max_evidence_chunks_per_job: 12
-  entity_disambiguation: true
-  disambiguation_lexical_threshold: 0.88
-  auto_index: false
-  reset_on_add: true
-
-service:
-  host: 127.0.0.1
-  port: 8000
-"""
+DEFAULT_SERVICE_CONFIG_PATH = Path("configs/default.yaml")
 
 
 @dataclass(frozen=True)
@@ -135,11 +91,11 @@ class SearchRequest(_Model):
 def create_app(settings: DMSServiceSettings | None = None) -> FastAPI:
     if _FASTAPI_IMPORT_ERROR is not None:
         raise RuntimeError("FastAPI service dependencies are not installed. Install with `pip install -e .[service]`.") from _FASTAPI_IMPORT_ERROR
-    settings = settings or settings_from_env()
+    settings = settings or default_service_settings()
     app = FastAPI(title="Diegetic Memory Society Memory API", version="0.1.0")
 
     def references() -> ExternalReferences:
-        return ExternalReferences(_reference_config(settings), llm_client=_llm_client(settings))
+        return references_from_settings(settings)
 
     @app.get("/health")
     def health() -> dict[str, Any]:
@@ -184,29 +140,24 @@ def create_app(settings: DMSServiceSettings | None = None) -> FastAPI:
     return app
 
 
-def settings_from_env() -> DMSServiceSettings:
-    reference_db = _env_path("DMS_REFERENCE_DB", Path("data/reference_library/reference.sqlite"))
-    model_config_raw = os.environ.get("DMS_MODEL_CONFIG")
-    return DMSServiceSettings(
-        reference_db_path=reference_db,
-        work_dir=_optional_env_path("DMS_REFERENCE_WORK_DIR"),
-        reference_chroma_dir=_optional_env_path("DMS_REFERENCE_CHROMA_DIR"),
-        reference_collection_name=os.environ.get("DMS_REFERENCE_COLLECTION", "dms_reference_knowledge"),
-        model_config_path=Path(model_config_raw) if model_config_raw else None,
-        model_section=os.environ.get("DMS_MODEL_SECTION", "llm"),
-        embedding_section=os.environ.get("DMS_EMBEDDING_SECTION", "embedding"),
-        provider=os.environ.get("DMS_PROVIDER", "fake"),
-        max_chunk_chars=int(os.environ.get("DMS_MAX_CHUNK_CHARS", "2400")),
-        max_retries=int(os.environ.get("DMS_MAX_RETRIES", "1")),
-        workers=int(os.environ.get("DMS_WORKERS", "4")),
-        extract_fact_properties=_env_bool("DMS_EXTRACT_FACT_PROPERTIES", True),
-        reference_fact_min_entity_degree=int(os.environ.get("DMS_REFERENCE_FACT_MIN_ENTITY_DEGREE", "2")),
-        reference_fact_max_evidence_chunks_per_job=int(os.environ.get("DMS_REFERENCE_FACT_MAX_EVIDENCE_CHUNKS_PER_JOB", "12")),
-        entity_disambiguation=_env_bool("DMS_ENTITY_DISAMBIGUATION", True),
-        disambiguation_lexical_threshold=float(os.environ.get("DMS_DISAMBIGUATION_LEXICAL_THRESHOLD", "0.88")),
-        auto_index=_env_bool("DMS_AUTO_INDEX", False),
-        reset_on_add=_env_bool("DMS_RESET_ON_ADD", True),
+def default_service_settings() -> DMSServiceSettings:
+    default_config = Path("configs/local_config.yaml")
+    if default_config.is_file():
+        return settings_from_config(default_config)
+    if DEFAULT_SERVICE_CONFIG_PATH.is_file():
+        return settings_from_config(DEFAULT_SERVICE_CONFIG_PATH)
+    raise FileNotFoundError(
+        "No DMS service config found. Run `dms-service --init-config configs/local_config.yaml` "
+        "or pass `--config path/to/config.yaml`."
     )
+
+
+def references_from_config(path: str | Path = "configs/local_config.yaml") -> ExternalReferences:
+    return references_from_settings(settings_from_config(path))
+
+
+def references_from_settings(settings: DMSServiceSettings) -> ExternalReferences:
+    return ExternalReferences(_reference_config(settings), llm_client=_llm_client(settings))
 
 
 def settings_from_config(path: str | Path = "configs/local_config.yaml") -> DMSServiceSettings:
@@ -251,13 +202,70 @@ def service_host_port_from_config(path: str | Path = "configs/local_config.yaml"
     return str(service.get("host") or "127.0.0.1"), _config_int(service.get("port"), 8000)
 
 
-def write_service_config_template(path: str | Path, *, overwrite: bool = False) -> dict[str, str]:
+def write_service_config_template(
+    path: str | Path,
+    *,
+    overwrite: bool = False,
+    template_path: str | Path = DEFAULT_SERVICE_CONFIG_PATH,
+) -> dict[str, str]:
     output_path = Path(path)
     if output_path.exists() and not overwrite:
         raise FileExistsError(f"Config already exists: {output_path}")
+    source_path = Path(template_path)
+    if source_path.is_file():
+        template = source_path.read_text(encoding="utf-8")
+    else:
+        template = _fallback_service_config_template()
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(DEFAULT_SERVICE_CONFIG_TEMPLATE, encoding="utf-8")
+    output_path.write_text(template, encoding="utf-8")
     return {"config_path": str(output_path), "status": "created"}
+
+
+def _fallback_service_config_template() -> str:
+    return """\
+llm:
+  provider: openai
+  model_name: YOUR_CHAT_MODEL
+  api_key: YOUR_LOCAL_API_KEY
+  base_url: http://127.0.0.1:8001
+  max_tokens: 3072
+  temperature: 0
+  timeout_seconds: 240
+  enable_thinking: false
+  include_chat_template_kwargs: true
+
+embedding:
+  provider: openai
+  model_name: YOUR_EMBEDDING_MODEL
+  api_key: YOUR_LOCAL_API_KEY
+  base_url: http://127.0.0.1:8081
+  max_tokens: 8192
+  dimensions: 1024
+  timeout_seconds: 60
+
+external_references:
+  provider: openai
+  model_section: llm
+  embedding_section: embedding
+  db_path: runs/reference_library/we2_refs.sqlite
+  work_dir: runs/reference_library/service_work
+  chroma_dir:
+  collection_name: dms_reference_knowledge
+  workers: 8
+  max_chunk_chars: 2400
+  max_retries: 1
+  extract_fact_properties: true
+  reference_fact_min_entity_degree: 2
+  reference_fact_max_evidence_chunks_per_job: 12
+  entity_disambiguation: true
+  disambiguation_lexical_threshold: 0.88
+  auto_index: false
+  reset_on_add: true
+
+service:
+  host: 127.0.0.1
+  port: 8000
+"""
 
 
 def _reference_config(settings: DMSServiceSettings) -> ExternalReferencesConfig:
@@ -326,23 +334,6 @@ def _search_evidence_budget(request: SearchRequest) -> str | dict[str, Any] | No
     return {"profile": request.evidence_budget or "standard", **overrides}
 
 
-def _env_path(name: str, default: Path) -> Path:
-    value = os.environ.get(name)
-    return Path(value) if value else default
-
-
-def _optional_env_path(name: str) -> Path | None:
-    value = os.environ.get(name)
-    return Path(value) if value else None
-
-
-def _env_bool(name: str, default: bool) -> bool:
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    return value.strip().lower() not in {"0", "false", "no", "off"}
-
-
 def _external_references_block(config: dict[str, Any]) -> dict[str, Any]:
     block = config.get("external_references")
     if block is None:
@@ -388,7 +379,7 @@ def _config_float(value: Any, default: float) -> float:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Run the DMS memory FastAPI service.")
-    parser.add_argument("--config", type=Path, default=None, help="YAML config containing llm, embedding, external_references, and service sections. Defaults to configs/local_config.yaml when present.")
+    parser.add_argument("--config", type=Path, default=None, help="YAML config containing llm, embedding, external_references, and service sections. Defaults to configs/local_config.yaml when present, otherwise configs/default.yaml.")
     parser.add_argument("--init-config", type=Path, default=None, help="Write a starter YAML config and exit.")
     parser.add_argument("--overwrite", action="store_true", help="Allow --init-config to overwrite an existing file.")
     parser.add_argument("--host", default=None)
@@ -405,23 +396,36 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     default_config = Path("configs/local_config.yaml")
-    config_path = args.config or (default_config if default_config.is_file() else None)
-    if config_path is not None:
-        settings = settings_from_config(config_path)
-        config_host, config_port = service_host_port_from_config(config_path)
-        host = args.host or config_host
-        port = args.port if args.port is not None else config_port
-    else:
-        settings = settings_from_env()
-        host = args.host or os.environ.get("DMS_HOST", "127.0.0.1")
-        port = args.port if args.port is not None else int(os.environ.get("DMS_PORT", "8000"))
+    config_path = args.config or (default_config if default_config.is_file() else (DEFAULT_SERVICE_CONFIG_PATH if DEFAULT_SERVICE_CONFIG_PATH.is_file() else None))
+    if config_path is None:
+        parser.error("No config found. Run `dms-service --init-config configs/local_config.yaml` or pass `--config`.")
+    settings = settings_from_config(config_path)
+    config_host, config_port = service_host_port_from_config(config_path)
+    host = args.host or config_host
+    port = args.port if args.port is not None else config_port
 
     import uvicorn
 
     uvicorn.run(create_app(settings), host=host, port=port, reload=args.reload)
 
 
-app = create_app() if _FASTAPI_IMPORT_ERROR is None else None
+def _create_module_app() -> FastAPI | None:
+    if _FASTAPI_IMPORT_ERROR is not None:
+        return None
+    try:
+        return create_app()
+    except FileNotFoundError as exc:
+        detail = str(exc)
+        missing_config_app = FastAPI(title="Diegetic Memory Society Memory API", version="0.1.0")
+
+        @missing_config_app.get("/health")
+        def health() -> dict[str, Any]:
+            return {"status": "config_missing", "detail": detail}
+
+        return missing_config_app
+
+
+app = _create_module_app()
 
 
 if __name__ == "__main__":

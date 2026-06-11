@@ -1,9 +1,9 @@
 # External References 使用说明
 
-External References 提供一组 memory-style 接口：
-`add`、`search`、`get_all`。应用侧不需要直接关心底层的 ingest、KG
-抽取、fact/property 抽取、SQLite import、Chroma indexing 等步骤；这些都由
-`add` 内部串起来。
+External References 是一个独立的外部资料知识建模和检索模块，核心接口只有：
+`add`、`search`、`get_all`。它不负责写作生成，也不依赖 reranker。应用侧不需要
+直接关心底层的 ingest、KG 抽取、fact/property 抽取、SQLite import、Chroma
+indexing 等步骤；这些都由 `add` 内部串起来。
 
 使用方式概览：
 
@@ -30,12 +30,25 @@ pip install -e '.[service]'
 ## 本地配置文件
 
 `configs/local_config.yaml` 用于保存本机模型服务和 embedding 服务配置，已在 `.gitignore` 中。
-可以参考 `configs/default.yaml` 创建，并补充 LLM 和 embedding 配置：
+推荐直接从默认配置生成：
+
+```bash
+dms-service --init-config configs/local_config.yaml
+```
+
+也可以手动复制：
+
+```bash
+cp configs/default.yaml configs/local_config.yaml
+```
+
+然后编辑 `configs/local_config.yaml` 里的 `llm`、`embedding`、`external_references`
+和 `service` section。External References 不需要 `writing_llm` 或 reranker 配置。
 
 ```yaml
 llm:
   provider: openai
-  model_name: Qwen3.5-397B-A17B-FP8
+  model_name: YOUR_CHAT_MODEL
   api_key: YOUR_LOCAL_API_KEY
   base_url: http://127.0.0.1:8001
   max_tokens: 3072
@@ -46,16 +59,39 @@ llm:
 
 embedding:
   provider: openai
-  model_name: bge-m3
+  model_name: YOUR_EMBEDDING_MODEL
   api_key: YOUR_LOCAL_API_KEY
   base_url: http://127.0.0.1:8081
   max_tokens: 8192
   dimensions: 1024
   timeout_seconds: 60
+
+external_references:
+  provider: openai
+  model_section: llm
+  embedding_section: embedding
+  db_path: runs/reference_library/we2_refs.sqlite
+  work_dir: runs/reference_library/service_work
+  chroma_dir:
+  collection_name: dms_reference_knowledge
+  workers: 8
+  max_chunk_chars: 2400
+  max_retries: 1
+  extract_fact_properties: true
+  reference_fact_min_entity_degree: 2
+  reference_fact_max_evidence_chunks_per_job: 12
+  entity_disambiguation: true
+  disambiguation_lexical_threshold: 0.88
+  auto_index: false
+  reset_on_add: true
+
+service:
+  host: 127.0.0.1
+  port: 8000
 ```
 
 如果使用不需要 `chat_template_kwargs` 的 OpenAI-compatible reasoning 服务，可以在
-对应 section 中设置：
+`llm` section 中设置：
 
 ```yaml
 thinking:
@@ -65,62 +101,20 @@ include_chat_template_kwargs: false
 
 ## Python 调用
 
-Python 侧通常先读取本地配置，再创建 `ExternalReferences` 实例。
-`load_local_config` 负责读取 YAML，`build_openai_client_from_config` 负责创建
-LLM client，`embedding_kwargs_from_config` 负责生成 embedding 参数。
+Python 侧直接从配置文件创建 facade。路径、DB、work dir、并发数、模型和 embedding
+都来自 YAML；业务代码只调用 `add/search/get_all`。
 
 ```python
-from pathlib import Path
-
-from dms.config import (
-    build_openai_client_from_config,
-    embedding_kwargs_from_config,
-    load_local_config,
-)
-from dms.external_references import ExternalReferences, ExternalReferencesConfig
+from dms.service import references_from_config
 
 
-def build_external_refs(
-    *,
-    config_path: str | Path = "configs/local_config.yaml",
-    db_path: str | Path = "runs/reference_library/we2_refs.sqlite",
-    work_dir: str | Path = "runs/reference_library/we2_refs_work",
-    chroma_dir: str | Path | None = None,
-    workers: int = 8,
-    extract_fact_properties: bool = True,
-    entity_disambiguation: bool = True,
-) -> ExternalReferences:
-    config = load_local_config(config_path)
-    llm_client = build_openai_client_from_config(config, "llm")
-    embedding_kwargs = embedding_kwargs_from_config(config, "embedding")
-
-    return ExternalReferences(
-        ExternalReferencesConfig(
-            db_path=Path(db_path),
-            work_dir=Path(work_dir),
-            chroma_dir=Path(chroma_dir) if chroma_dir else None,
-            workers=workers,
-            extract_fact_properties=extract_fact_properties,
-            entity_disambiguation=entity_disambiguation,
-            auto_index=bool(chroma_dir),
-            **embedding_kwargs,
-        ),
-        llm_client=llm_client,
-    )
-
-
-refs = build_external_refs(
-    db_path="runs/reference_library/we2_refs.sqlite",
-    work_dir="runs/reference_library/we2_refs_work",
-    chroma_dir=None,
-    workers=8,
-    extract_fact_properties=False,
-)
+refs = references_from_config("configs/local_config.yaml")
 
 add_result = refs.add(
     "data/reference_library/we2_web_refs_20260605",
     metadata={"project_id": "we2"},
     workers=8,
+    extract_fact_properties=False,
 )
 
 search_result = refs.search(
@@ -154,39 +148,14 @@ all_docs = refs.get_all()
 
 ## FastAPI 服务
 
-服务直接读取 YAML 配置。第一次使用可以生成模板：
+服务直接读取 YAML 配置。第一次使用先生成本地配置：
 
 ```bash
 dms-service --init-config configs/local_config.yaml
 ```
 
-然后编辑 `configs/local_config.yaml` 中的 `llm`、`embedding` 和
-`external_references` section。服务相关配置放在 `service` section：
-
-```yaml
-external_references:
-  provider: openai
-  model_section: llm
-  embedding_section: embedding
-  db_path: runs/reference_library/we2_refs.sqlite
-  work_dir: runs/reference_library/service_work
-  chroma_dir:
-  collection_name: dms_reference_knowledge
-  workers: 8
-  max_chunk_chars: 2400
-  max_retries: 1
-  extract_fact_properties: true
-  reference_fact_min_entity_degree: 2
-  reference_fact_max_evidence_chunks_per_job: 12
-  entity_disambiguation: true
-  disambiguation_lexical_threshold: 0.88
-  auto_index: false
-  reset_on_add: true
-
-service:
-  host: 127.0.0.1
-  port: 8000
-```
+然后编辑 `configs/local_config.yaml` 中的 `llm`、`embedding`、`external_references`
+和 `service` section。
 
 启动服务：
 
@@ -313,7 +282,7 @@ python -m dms.cli query-reference-knowledge \
 `search` 返回的主要字段：
 
 - `results`：memory-style 的紧凑命中结果。
-- `evidence_packet`：给回答或写作上下文使用的证据包，包含实体、关系、facts、properties、chunks、graph insights、citations 和 answer context。
+- `evidence_packet`：给检索消费方使用的证据包，包含实体、关系、facts、properties、chunks、graph insights、citations 和 answer context。
 - `query_plan`：low-level/high-level keyword plan 和多路检索 passes。
 - `raw_retrieval`：每个检索 pass 的摘要。
 - `raw`：完整结构化检索结果。

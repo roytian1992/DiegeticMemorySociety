@@ -90,50 +90,51 @@ For Chroma indexing and the UI, the environment also needs `chromadb` and `gradi
 ## Local Config
 
 Use a local YAML config at `configs/local_config.yaml`. This file is ignored and should not be committed.
+Start from the tracked default config, then fill in your local model service values:
+
+```bash
+cp configs/default.yaml configs/local_config.yaml
+```
 
 ```yaml
 llm:
   provider: openai
-  model_name: Qwen3-235B-FP8
+  model_name: YOUR_CHAT_MODEL
   api_key: <local-token>
-  base_url: http://127.0.0.1:8002
-  max_tokens: 4096
-  timeout: 240
+  base_url: http://127.0.0.1:8001
+  max_tokens: 3072
+  timeout_seconds: 240
   temperature: 0
   enable_thinking: false
   include_chat_template_kwargs: true
 
 embedding:
   provider: openai
-  model_name: bge-m3
+  model_name: YOUR_EMBEDDING_MODEL
   api_key: <local-token>
-  base_url: http://127.0.0.1:8081/v1
+  base_url: http://127.0.0.1:8081
   max_tokens: 8192
   dimensions: 1024
-  timeout: 60
+  timeout_seconds: 60
 
-writing_llm:
+external_references:
   provider: openai
-  model_name: gpt-5.5
-  api_key: <local-secret>
-  base_url: <writing-llm-openai-compatible-base-url>
-  max_tokens: 4096
-  timeout: 240
-  temperature: 0.7
-  reasoning_effort: high
-  # Some OpenAI-compatible reasoning endpoints need this instead of
-  # chat_template_kwargs.enable_thinking=false.
-  # thinking:
-  #   type: disabled
-  # include_chat_template_kwargs: false
+  model_section: llm
+  embedding_section: embedding
+  db_path: runs/reference_library/we2_refs.sqlite
+  work_dir: runs/reference_library/service_work
+  collection_name: dms_reference_knowledge
+  workers: 8
+  extract_fact_properties: true
+  entity_disambiguation: true
+
+service:
+  host: 127.0.0.1
+  port: 8000
 ```
 
-The current code uses the LLM and embedding sections. Creative Context Kernel
-commands can also call an OpenAI-compatible LLM. For local Qwen/vLLM servers,
-use `include_chat_template_kwargs: true` with `enable_thinking: false`; for
-OpenAI-style reasoning endpoints, use `thinking: {type: disabled}` and
-`include_chat_template_kwargs: false`. Commands can optionally use a FastAPI
-reranker for source-aware packet ranking.
+External reference service code reads `llm`, `embedding`, `external_references`, and
+`service`. It does not require a writing model or reranker.
 
 ## Common Commands
 
@@ -193,29 +194,9 @@ Python facade, FastAPI facade, CLI pipeline, and fact/property configuration
 switches.
 
 ```python
-from dms.external_references import ExternalReferences, ExternalReferencesConfig
-from dms.llm import OpenAIChatClient
+from dms.service import references_from_config
 
-refs = ExternalReferences(
-    ExternalReferencesConfig(
-        db_path="runs/reference_library/we2_refs.sqlite",
-        work_dir="runs/reference_library/we2_refs_work",
-        chroma_dir="runs/reference_library/we2_refs_chroma_bge_m3",
-        auto_index=True,
-        embedding_provider="openai",
-        embedding_model="bge-m3",
-        embedding_base_url="http://127.0.0.1:8081/v1",
-        embedding_api_key="token-abc123",
-        embedding_dim=1024,
-    ),
-    llm_client=OpenAIChatClient(
-        base_url="http://127.0.0.1:8002",
-        api_key="token-abc123",
-        model="Qwen3-235B-FP8",
-        include_chat_template_kwargs=True,
-        enable_thinking=False,
-    ),
-)
+refs = references_from_config("configs/local_config.yaml")
 
 refs.add("data/reference_library/we2_web_refs_20260605")
 hits = refs.search("张鹏和刘培强的关系", evidence_budget="standard")
@@ -230,15 +211,12 @@ Install the service extra when running the HTTP API:
 pip install -e '.[service]'
 ```
 
-Start the service with local paths. The default provider is `fake`; set
-`DMS_PROVIDER=openai` and `DMS_MODEL_CONFIG=configs/local_config.yaml` for a
-real OpenAI-compatible LLM.
+Start the service from YAML config. Set `llm`, `embedding`,
+`external_references`, and `service` in `configs/local_config.yaml`.
 
 ```bash
-export DMS_REFERENCE_DB=runs/reference_library/we2_refs.sqlite
-export DMS_REFERENCE_WORK_DIR=runs/reference_library/service_work
-export DMS_WORKERS=8
-dms-service --host 127.0.0.1 --port 8000
+dms-service --init-config configs/local_config.yaml
+dms-service --config configs/local_config.yaml
 ```
 
 Memory facade endpoints:
@@ -414,8 +392,6 @@ python -m dms.cli build-creative-context-packet \
   --before-unit-order 6 \
   --entity-id character_0011 \
   --entity-id character_0017 \
-  --reranker fastapi \
-  --reranker-base-url http://127.0.0.1:8090 \
   --format markdown \
   --output runs/context/scene6_creative_context_packet.md
 ```
@@ -432,7 +408,7 @@ python -m dms.cli context-external-qa \
   --provider openai \
   --model Qwen3-235B-FP8 \
   --base-url http://127.0.0.1:8002 \
-  --auth-token token-abc123
+  --auth-token <local-token>
 ```
 
 Promote a conversation or external item only after explicit acceptance:

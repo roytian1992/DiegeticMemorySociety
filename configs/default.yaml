@@ -14,3 +14,46 @@ prompts:
   scene_inventory: dms/scene_inventory
   scene_event_candidates: dms/scene_event_candidates
   visibility_notes: dms/visibility_notes
+
+llm:
+  provider: openai
+  model_name: YOUR_CHAT_MODEL
+  api_key: YOUR_LOCAL_API_KEY
+  base_url: http://127.0.0.1:8001
+  max_tokens: 3072
+  temperature: 0
+  timeout_seconds: 240
+  enable_thinking: false
+  include_chat_template_kwargs: true
+
+embedding:
+  provider: openai
+  model_name: YOUR_EMBEDDING_MODEL
+  api_key: YOUR_LOCAL_API_KEY
+  base_url: http://127.0.0.1:8081
+  max_tokens: 8192
+  dimensions: 1024
+  timeout_seconds: 60
+
+external_references:
+  provider: openai
+  model_section: llm
+  embedding_section: embedding
+  db_path: runs/reference_library/we2_refs.sqlite
+  work_dir: runs/reference_library/service_work
+  chroma_dir:
+  collection_name: dms_reference_knowledge
+  workers: 8
+  max_chunk_chars: 2400
+  max_retries: 1
+  extract_fact_properties: true
+  reference_fact_min_entity_degree: 2
+  reference_fact_max_evidence_chunks_per_job: 12
+  entity_disambiguation: true
+  disambiguation_lexical_threshold: 0.88
+  auto_index: false
+  reset_on_add: true
+
+service:
+  host: 127.0.0.1
+  port: 8000

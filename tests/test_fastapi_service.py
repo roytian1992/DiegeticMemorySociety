@@ -9,7 +9,11 @@ from fastapi.testclient import TestClient
 
 from dms.service.fastapi_app import (
     DMSServiceSettings,
+    DEFAULT_SERVICE_CONFIG_PATH,
+    _create_module_app,
     create_app,
+    default_service_settings,
+    references_from_config,
     service_host_port_from_config,
     settings_from_config,
     write_service_config_template,
@@ -145,6 +149,46 @@ service:
     assert client.get("/health").json()["reference_db_path"] == str(tmp_path / "refs.sqlite")
 
 
+def test_external_reference_facade_can_be_built_from_yaml_config(tmp_path: Path) -> None:
+    refs_dir = tmp_path / "refs"
+    refs_dir.mkdir()
+    (refs_dir / "profiles.md").write_text("# 人物\n刘培强第一次接触550A训练。张鹏指导刘培强。\n", encoding="utf-8")
+    config_path = tmp_path / "local_config.yaml"
+    config_path.write_text(
+        f"""
+llm:
+  provider: openai
+  model_name: fake-model
+  api_key: token
+  base_url: http://127.0.0.1:8001
+embedding:
+  provider: hash
+  dimensions: 64
+external_references:
+  provider: fake
+  model_section: llm
+  embedding_section: embedding
+  db_path: {tmp_path / "refs.sqlite"}
+  work_dir: {tmp_path / "work"}
+  workers: 2
+  extract_fact_properties: false
+service:
+  host: 127.0.0.1
+  port: 8000
+""",
+        encoding="utf-8",
+    )
+    refs = references_from_config(config_path)
+
+    add_result = refs.add(refs_dir)
+
+    assert refs.config.db_path == tmp_path / "refs.sqlite"
+    assert refs.config.work_dir == tmp_path / "work"
+    assert refs.config.workers == 2
+    assert refs.config.extract_fact_properties is False
+    assert add_result["summary"]["facts_properties"] is None
+
+
 def test_fastapi_service_can_write_starter_config(tmp_path: Path) -> None:
     config_path = tmp_path / "generated_config.yaml"
 
@@ -155,3 +199,38 @@ def test_fastapi_service_can_write_starter_config(tmp_path: Path) -> None:
     assert "external_references:" in text
     assert "service:" in text
     assert "llm:" in text
+
+
+def test_default_config_is_external_reference_service_ready() -> None:
+    settings = settings_from_config(DEFAULT_SERVICE_CONFIG_PATH)
+    host, port = service_host_port_from_config(DEFAULT_SERVICE_CONFIG_PATH)
+
+    assert settings.provider == "openai"
+    assert settings.model_section == "llm"
+    assert settings.embedding_section == "embedding"
+    assert settings.reference_db_path == Path("runs/reference_library/we2_refs.sqlite")
+    assert settings.work_dir == Path("runs/reference_library/service_work")
+    assert settings.reference_collection_name == "dms_reference_knowledge"
+    assert settings.workers == 8
+    assert settings.extract_fact_properties is True
+    assert settings.entity_disambiguation is True
+    assert host == "127.0.0.1"
+    assert port == 8000
+
+
+def test_default_service_settings_requires_yaml_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(FileNotFoundError, match="--init-config"):
+        default_service_settings()
+
+
+def test_module_app_import_path_does_not_require_yaml_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    app = _create_module_app()
+    client = TestClient(app)
+
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "config_missing"
